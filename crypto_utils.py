@@ -1,6 +1,7 @@
 import base64
 from collections import defaultdict
-from itertools import cycle
+from itertools import cycle, combinations
+from math import inf
 from string import ascii_lowercase
 
 # fractional frequency of different letters in the English language
@@ -12,19 +13,19 @@ letter_freqs = {
 'y':0.01974, 'z':0.00074
 }
 
-single_bytes = [bytearray([x]) for x in range(256)]
+single_bytes = [bytes([x]) for x in range(256)]
 
 def hex_to_bytes(hex_string):
-    return bytearray.fromhex(hex_string)
+    return bytes.fromhex(hex_string)
 
-def bytes_to_hex(byte_array):
-    return bytearray.hex(byte_array)
+def bytes_to_hex(in_bytes):
+    return bytes.hex(in_bytes)
 
 def base64_to_bytes(base64_string):
-    return bytearray(base64.b64decode(base64_string))
+    return bytes(base64.b64decode(base64_string))
 
-def bytes_to_base64(byte_array):
-    return base64.b64encode(byte_array).decode('utf-8')
+def bytes_to_base64(in_bytes):
+    return base64.b64encode(in_bytes).decode('utf-8')
 
 def hex_to_base64(hex_string):
     return bytes_to_base64(hex_to_bytes(hex_string))
@@ -34,14 +35,15 @@ def base64_to_hex(base64_string):
 
 def XOR_bytes(bytes_1, bytes_2):
     if len(bytes_1) >= len(bytes_2):
-        return bytearray([x^y for x, y in zip(bytes_1, cycle(bytes_2))])
+        return bytes([x^y for x, y in zip(bytes_1, cycle(bytes_2))])
     else:
-        return bytearray([x^y for x, y in zip(cycle(bytes_1), bytes_2)])
+        return bytes([x^y for x, y in zip(cycle(bytes_1), bytes_2)])
 
 def probability_of_english(test_string):
-    """Estimate the probability that a given string is English-language
-    by comparing frequencies of ASCII letters to typical English values"""
-    test_string = test_string.replace(" ","").lower()
+    """Estimate probability that a given string is English-language based on
+    letter frequency compared to typical English values, with a penalty for
+    fraction of non-letter, non-whitespace characters."""
+    test_string = test_string.replace(' ','').lower()
     num_occurrences = defaultdict(int)
 
     char_gen = (char for char in test_string if char in ascii_lowercase)
@@ -49,24 +51,76 @@ def probability_of_english(test_string):
         num_occurrences[char] += 1
     num_chars = sum([x for x in num_occurrences.values()])
 
-    score = len(test_string)-num_chars # penalty for non-English characters
+    penalty = len(test_string)-num_chars
     for char in ascii_lowercase:
         real_percent = num_occurrences[char]/num_chars if num_chars > 0 else 0
-        score += num_chars*abs(real_percent-letter_freqs[char])
-    return 1.0-score/len(test_string)
+        penalty += num_chars*abs(real_percent-letter_freqs[char])
+    penalty /= len(test_string)
+    return 1.0-penalty
 
-def single_byte_XOR(cipher_bytes):
-    """XOR a given set of bytes with all possible single-byte keys, return
-    the most probable English result as a tuple:
-    (probability, plain-text bytes, single-byte key)"""
+def decrypt_single_byte_XOR(cipher):
+    """Brute-force decrypt English (UTF-8) text encrypted with single-byte XOR.
+
+    Args:
+        cipher (bytes-like): Encrypted text.
+    Returns:
+        probability (float): Estimated probability of English text
+        plain (bytes-like): Decrypted plain-text
+        key (bytes-like): Single-byte key
+    """
     best_match = (0.0, None, None)
-    for byte in single_bytes:
-        plain_bytes = XOR_bytes(cipher_bytes, byte)
+    for key in single_bytes:
+        plain = XOR_bytes(cipher, key)
         try:
-            probability = probability_of_english(plain_bytes.decode('utf-8'))
+            probability = probability_of_english(plain.decode('utf-8'))
         except UnicodeDecodeError:
             pass
         else:
             if probability > best_match[0]:
-                best_match = (probability,plain_bytes,byte)
+                best_match = (probability, plain, key)
     return best_match
+
+def Hamming_dist(bytes_1, bytes_2):
+    return sum([bin(x^y).count('1') for x, y in zip(bytes_1, bytes_2)])
+
+def decrypt_repeating_XOR(cipher, max_key_size=40):
+    """Decrypt text encoded with repeating-key XOR (Vigenere cipher).
+
+    Args:
+        cipher (bytes-like): Encrypted text.
+        max_key_size (int, optional): Maximum key-length to guess.
+    Returns:
+        plain (bytes-like): Decrypted plain-text
+        key (bytes-like): Decryption key
+    """
+    key_size = guess_repeating_XOR_key_size(cipher, max_key_size=max_key_size)
+    key = get_repeating_XOR_key(cipher, key_size)
+    plain = XOR_bytes(cipher, key)
+    return (plain, key)
+
+def guess_repeating_XOR_key_size(cipher, max_key_size, num_to_avg=4):
+    """Guess key size for repeating-key XOR (Vigenere cipher) by comparing
+    average Hamming distance of multiple blocks of the ciphertext."""
+    min_dist = inf
+    for size in range(1, max_key_size+1):
+        num_blocks = min(num_to_avg, len(cipher)//size)
+        blocks = [cipher[x*size:(x+1)*size] for x in range(num_blocks)]
+        distances = [Hamming_dist(x,y)/size for x, y in combinations(blocks, 2)]
+        avg_dist = sum(distances)/len(distances)
+        if avg_dist < min_dist:
+            min_dist, key_size = avg_dist, size
+    return key_size
+
+def get_repeating_XOR_key(cipher, key_size):
+    key = []
+    for block in transpose_bytes(cipher, key_size):
+        key_byte = decrypt_single_byte_XOR(block)[2][0]
+        key.append(key_byte)
+    return bytes(key)
+
+def transpose_bytes(in_bytes, block_size):
+    """Generator yielding subsets of a byte-like, where the n-th generated
+    value is every n-th byte from repeated blocks of the input."""
+    num_blocks = len(in_bytes)//block_size
+    for offset in range(block_size):
+        yield bytes([in_bytes[x*block_size+offset] for x in range(num_blocks)])
