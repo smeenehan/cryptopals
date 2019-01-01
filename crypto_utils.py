@@ -3,6 +3,7 @@ from collections import defaultdict
 from Crypto.Cipher import AES
 from itertools import cycle, combinations
 from math import inf
+from random import randint
 from string import ascii_lowercase
 
 # fractional frequency of different letters in the English language
@@ -39,6 +40,12 @@ def read_base64(file_path):
     with open(file_path, 'r') as f:
         cipher = f.read().replace('\n', '')
     return base64_to_bytes(cipher)
+
+def read_utf8(file_path):
+    cipher = ''
+    with open(file_path, 'r') as f:
+        cipher = bytes(f.read(), 'utf-8')
+    return cipher
 
 def XOR_bytes(bytes_1, bytes_2):
     if len(bytes_1) >= len(bytes_2):
@@ -132,10 +139,101 @@ def transpose_bytes(in_bytes, block_size):
     for offset in range(block_size):
         yield bytes([in_bytes[x*block_size+offset] for x in range(num_blocks)])
 
-def detect_AES_ECB(cipher):
-    """Detect whether an AES encrypted ciphertext used ECB, by looking for
+def detect_ECB(cipher, block_size = AES.block_size):
+    """Detect whether an encrypted ciphertext used ECB, by looking for
     repeated code blocks."""
-    block_size = AES.block_size
     num_blocks = len(cipher)//block_size
     blocks = [cipher[x*block_size:(x+1)*block_size] for x in range(num_blocks)]
     return len(blocks) != len(set(blocks))
+
+def pad_PKCS7(unpadded, block_size=AES.block_size):
+    """Pad to given block size according to PKCS#7 standard"""
+    mod_len = len(unpadded)%block_size
+    num_bytes_needed = block_size-mod_len if mod_len > 0 else 0
+    padding = bytes([num_bytes_needed]*num_bytes_needed)
+    return unpadded+padding
+
+def decrypt_AES_CBC(cipher, key, iv=None):
+    block_size = AES.block_size
+    if iv is None:
+        iv = bytes([0]*block_size)
+    aes = AES.new(key, AES.MODE_ECB)
+    num_blocks = len(cipher)//block_size
+
+    plain = bytearray([])
+    for idx in range(num_blocks):
+        cipher_block = cipher[idx*block_size:(idx+1)*block_size]
+        plain_block = aes.decrypt(cipher_block)
+        plain += XOR_bytes(plain_block, iv)
+        iv = cipher_block
+    return bytes(plain)
+
+def encrypt_AES_CBC(plain, key, iv=None):
+    block_size = AES.block_size
+    if iv is None:
+        iv = bytes([0]*block_size)
+    aes = AES.new(key, AES.MODE_ECB)
+    if len(plain)%block_size > 0:
+        plain = pad_PKCS7(plain)
+    num_blocks = len(plain)//block_size
+
+    cipher = bytearray([])
+    for idx in range(num_blocks):
+        plain_block = XOR_bytes(plain[idx*block_size:(idx+1)*block_size], iv)
+        cipher_block = aes.encrypt(plain_block)
+        cipher += cipher_block
+        iv = cipher_block
+    return bytes(cipher)
+
+def random_bytes(count=AES.block_size):
+    return bytes([randint(0, 255) for _ in range(count)])
+
+def ECB_oracle(encrypt_func, block_size=AES.block_size):
+    """Return whether or not a specified black-box block-cipher encryption
+    function is using ECB mode."""
+    test = random_bytes(count=block_size)*100
+    cipher = encrypt_func(test)
+    return detect_ECB(cipher, block_size=block_size)
+
+def get_block_size(encrypt_func):
+    """Find block size used by a black-box, block-cipher encryption function."""
+    last_len, first_len, second_len = len(encrypt_func(bytes([]))), 0, 0
+    in_size = 1
+    while second_len == 0:
+        in_bytes = bytes([0]*in_size)
+        cipher_len = len(encrypt_func(in_bytes))
+        in_size += 1
+        if cipher_len == last_len:
+            continue
+        if first_len == 0:
+            first_len = cipher_len
+            last_len = first_len
+        else:
+            second_len = cipher_len
+    return second_len-first_len
+
+def chosen_plaintext_ECB(encrypt_func, block_size=AES.block_size):
+    """Determine a secret plaintext used by a black-box, block-cipher
+    encryption function operating in ECB mode. The only requirement is that
+    the function appends arbitrary, user-supplied input to the secret prior
+    to encryption, and uses the same secret/key for each query."""
+
+    def determine_padding(known):
+        pad_size = block_size-1-len(known)%block_size
+        in_bytes = bytes([0]*pad_size)
+        idx = len(known)//block_size
+        total = in_bytes+bytes(known)
+        last_frag = total[-block_size+1:]
+        return (in_bytes, idx, last_frag)
+
+    secret = bytearray([])
+    remaining = inf
+    while remaining > 0:
+        in_bytes, idx, last_frag = determine_padding(secret)
+        cipher_frags = [encrypt_func(last_frag+x)[:block_size] for x in single_bytes]
+        plain_dict = {x: y[0] for x, y in zip(cipher_frags, single_bytes)}
+        cipher = encrypt_func(in_bytes)
+        cipher_frag = cipher[idx*block_size:(idx+1)*block_size]
+        secret.append(plain_dict[cipher_frag])
+        remaining = len(cipher)-len(in_bytes)-len(secret)
+    return bytes(secret)

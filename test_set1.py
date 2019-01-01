@@ -57,6 +57,7 @@ class Set1(TestCase):
                     best_plain = plain.decode('utf-8')
         self.assertEqual(best_plain, plain_expect)
 
+    # implement repeating-key XOR
     def test_5(self):
         plain_bytes = bytes("Burning 'em, if you ain't quick and nimble\n" \
                            +'I go crazy when I hear a cymbal', 'utf-8')
@@ -68,32 +69,30 @@ class Set1(TestCase):
         cipher_bytes = cu.XOR_bytes(plain_bytes, key_bytes)
         self.assertEqual(cipher_bytes, expected_bytes)
 
+    # break repeating-key XOR
     def test_6(self):
         key_expect = bytes('Terminator X: Bring the noise', 'utf-8')
-        plain_expect = ''
-        with open('data/Set_1_6_decrypted.txt', 'r') as f:
-            plain_expect = bytes(f.read(), 'utf-8')
-
+        plain_expect = cu.read_utf8('data/Set_1_6_decrypted.txt')
         cipher = cu.read_base64('data/Set_1_6.txt')
         (plain, key) = cu.decrypt_repeating_XOR(cipher)
 
         self.assertEqual(key, key_expect)
         self.assertEqual(plain, plain_expect)
 
+    # AES in ECB mode
     def test_7(self):
         key = bytes('YELLOW SUBMARINE', 'utf-8')
-        plain_expect = ''
-        with open('data/Set_1_7_decrypted.txt', 'r') as f:
-            plain_expect = bytes(f.read(), 'utf-8')
+        plain_expect = cu.read_utf8('data/Set_1_7_decrypted.txt')
         cipher = cu.read_base64('data/Set_1_7.txt')
         aes = AES.new(key, AES.MODE_ECB)
         plain = aes.decrypt(cipher)
         self.assertEqual(plain, plain_expect)
 
+    # detect AES in ECB mode
     def test_8(self):
         ECB_ciphers = []
         with open('data/Set_1_8.txt', 'r') as f:
             for cipher in f:
-                if cu.detect_AES_ECB(cipher):
+                if cu.detect_ECB(cipher):
                     ECB_ciphers.append(cipher)
         self.assertEqual(len(ECB_ciphers), 1)
