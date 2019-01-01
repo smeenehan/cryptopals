@@ -1,5 +1,6 @@
 import base64
 from collections import defaultdict
+from Crypto.Cipher import AES
 from itertools import cycle, combinations
 from math import inf
 from string import ascii_lowercase
@@ -32,6 +33,12 @@ def hex_to_base64(hex_string):
 
 def base64_to_hex(base64_string):
     return bytes_to_hex(base64_to_bytes(base64_string))
+
+def read_base64(file_path):
+    cipher = ''
+    with open(file_path, 'r') as f:
+        cipher = f.read().replace('\n', '')
+    return base64_to_bytes(cipher)
 
 def XOR_bytes(bytes_1, bytes_2):
     if len(bytes_1) >= len(bytes_2):
@@ -124,3 +131,11 @@ def transpose_bytes(in_bytes, block_size):
     num_blocks = len(in_bytes)//block_size
     for offset in range(block_size):
         yield bytes([in_bytes[x*block_size+offset] for x in range(num_blocks)])
+
+def detect_AES_ECB(cipher):
+    """Detect whether an AES encrypted ciphertext used ECB, by looking for
+    repeated code blocks."""
+    block_size = AES.block_size
+    num_blocks = len(cipher)//block_size
+    blocks = [cipher[x*block_size:(x+1)*block_size] for x in range(num_blocks)]
+    return len(blocks) != len(set(blocks))

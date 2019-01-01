@@ -1,4 +1,5 @@
 import crypto_utils as cu
+from Crypto.Cipher import AES
 from unittest import TestCase
 
 class Set1(TestCase):
@@ -71,15 +72,28 @@ class Set1(TestCase):
         key_expect = bytes('Terminator X: Bring the noise', 'utf-8')
         plain_expect = ''
         with open('data/Set_1_6_decrypted.txt', 'r') as f:
-            plain_expect = f.read()
-        plain_expect = bytes(plain_expect, 'utf-8')
+            plain_expect = bytes(f.read(), 'utf-8')
 
-        cipher = ''
-        with open('data/Set_1_6.txt', 'r') as f:
-            cipher = f.read().replace('\n', '')
-        cipher = cu.base64_to_bytes(cipher)
+        cipher = cu.read_base64('data/Set_1_6.txt')
         (plain, key) = cu.decrypt_repeating_XOR(cipher)
 
         self.assertEqual(key, key_expect)
         self.assertEqual(plain, plain_expect)
 
+    def test_7(self):
+        key = bytes('YELLOW SUBMARINE', 'utf-8')
+        plain_expect = ''
+        with open('data/Set_1_7_decrypted.txt', 'r') as f:
+            plain_expect = bytes(f.read(), 'utf-8')
+        cipher = cu.read_base64('data/Set_1_7.txt')
+        aes = AES.new(key, AES.MODE_ECB)
+        plain = aes.decrypt(cipher)
+        self.assertEqual(plain, plain_expect)
+
+    def test_8(self):
+        ECB_ciphers = []
+        with open('data/Set_1_8.txt', 'r') as f:
+            for cipher in f:
+                if cu.detect_AES_ECB(cipher):
+                    ECB_ciphers.append(cipher)
+        self.assertEqual(len(ECB_ciphers), 1)
