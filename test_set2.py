@@ -1,5 +1,6 @@
 import crypto_utils as cu
 from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
 from math import inf
 from random import choice, randint
 from unittest import TestCase
@@ -30,7 +31,61 @@ def black_box(plain):
     plain = cu.pad_PKCS7(plain)
     return aes.encrypt(plain)
 
+def k_v_parser(in_str):
+    tokens = in_str.split('&')
+    parsed = {}
+    for token in tokens:
+        key, value = token.split('=')
+        parsed[key] = value
+    return parsed
+
+def k_v_encoder(in_dict):
+    encoded = []
+    for key, value in in_dict.items():
+        encoded.append(key+'='+value)
+    return '&'.join(encoded)
+
+def profile_for(email):
+    email = ''.join(email.split('='))
+    email = ''.join(email.split('&'))
+    profile = {'email': email, 'uid': '10', 'role': 'user'}
+    return k_v_encoder(profile)
+
+def encrypt_profile(email):
+    aes = AES.new(UNKNOWN_KEY, AES.MODE_ECB)
+    plain = bytes(profile_for(email), 'utf-8')
+    plain = pad(plain, AES.block_size)
+    return aes.encrypt(plain)
+
+def decrypt_profile(cipher):
+    aes = AES.new(UNKNOWN_KEY, AES.MODE_ECB)
+    plain = aes.decrypt(cipher)
+    plain = unpad(plain, AES.block_size)
+    return k_v_parser(plain.decode('utf-8'))
+
+def cut_and_paste_attack(encrypt_func):
+    block_size = AES.block_size
+    """Assume the token is: 'email=<in>&uid=10&role=user'. Generate ciphertext
+    such that the second block begins with admin and has appropriate PKCS#7
+    padding, and the third block ends with '&role='"""
+    fake_email = 'fooey@bar.'+'admin'+'\x0b'*11+'com'
+    cipher = encrypt_func(fake_email)
+
+    return cipher[:block_size]+cipher[2*block_size:3*block_size]+cipher[block_size:2*block_size]
+
 class Set2(TestCase):
+
+    def test_k_v_parser(self):
+        expect = {'foo': 'bar', 'baz': 'qux', 'zap': 'zazzle'}
+        in_str = 'foo=bar&baz=qux&zap=zazzle'
+        self.assertEqual(k_v_parser(in_str), expect)
+        self.assertEqual(k_v_encoder(expect), in_str)
+
+    def test_profile_for(self):
+        expect = 'email=foo@bar.com&uid=10&role=user'
+        self.assertEqual(profile_for('foo@bar.com'), expect)
+        expect = 'email=foo@bar.comstuffstuff&uid=10&role=user'
+        self.assertEqual(profile_for('foo@bar.com&stuff=stuff'), expect)
 
     # implement PKCS#7 padding
     def test_9(self):
@@ -63,3 +118,9 @@ class Set2(TestCase):
         self.assertTrue(cu.ECB_oracle(black_box, block_size=block_size))
         secret = cu.chosen_plaintext_ECB(black_box, block_size=block_size)
         self.assertEqual(secret, UNKNOWN_PLAIN)
+
+    # ECB cut-and-paste
+    def test_13(self):
+        encrypted = cut_and_paste_attack(encrypt_profile)
+        user_profile = decrypt_profile(encrypted)
+        self.assertEqual(user_profile['role'], 'admin')
