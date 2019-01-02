@@ -10,6 +10,7 @@ UNKNOWN_PLAIN = cu.base64_to_bytes(
     'Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYm'\
    +'xvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91'\
    +'IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK')
+UNKNOWN_PREFIX = cu.random_bytes(randint(0, 24))
 
 def encryption_oracle(plain):
     key = cu.random_bytes()
@@ -27,7 +28,7 @@ def encryption_oracle(plain):
 
 def black_box(plain):
     aes = AES.new(UNKNOWN_KEY, AES.MODE_ECB)
-    plain = plain+UNKNOWN_PLAIN
+    plain = UNKNOWN_PREFIX+plain+UNKNOWN_PLAIN
     plain = cu.pad_PKCS7(plain)
     return aes.encrypt(plain)
 
@@ -87,6 +88,19 @@ class Set2(TestCase):
         expect = 'email=foo@bar.comstuffstuff&uid=10&role=user'
         self.assertEqual(profile_for('foo@bar.com&stuff=stuff'), expect)
 
+    def test_diff_blocks(self):
+        block_size = randint(5, 20)
+        byte_1 = cu.random_bytes(10*block_size)
+        byte_2 = bytearray(byte_1)
+        byte_2[2*block_size:3*block_size] = cu.random_bytes(block_size)
+        byte_2[7*block_size:8*block_size] = cu.random_bytes(block_size)
+        diff_blocks = cu.find_diff_blocks(byte_1, byte_2, block_size)
+        self.assertEqual(diff_blocks, [2, 7])
+
+    def test_find_prefix_len(self):
+        self.assertEqual(cu.find_prefix_len(black_box, AES.block_size),
+                         len(UNKNOWN_PREFIX))
+
     # implement PKCS#7 padding
     def test_9(self):
         key = bytes('YELLOW SUBMARINE', 'utf-8')
@@ -111,7 +125,7 @@ class Set2(TestCase):
         fraction_ECB = sum(ECB_detect)/len(ECB_detect)
         self.assertAlmostEqual(fraction_ECB, 0.5, delta=0.05)
 
-    # byte-at-a-time ECB decryption (Simple)
+    # byte-at-a-time ECB decryption (Simple and Hard)
     def test_12(self):
         block_size = cu.get_block_size(black_box)
         self.assertEqual(block_size, AES.block_size)

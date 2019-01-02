@@ -218,22 +218,51 @@ def chosen_plaintext_ECB(encrypt_func, block_size=AES.block_size):
     the function appends arbitrary, user-supplied input to the secret prior
     to encryption, and uses the same secret/key for each query."""
 
+    # Determine if there is a prefix applied by the function, get relevant offsets
+    pre_len = find_prefix_len(encrypt_func, block_size)
+    num_extra_pad = block_size-pre_len%block_size if pre_len > 0 else 0
+    pre_idx = (pre_len+num_extra_pad)//block_size
     def determine_padding(known):
-        pad_size = block_size-1-len(known)%block_size
+        """Given current knowledge, determine input length so that next unknown
+        byte will be aligned on the last byte of a block, get the offset index
+        of that block, and get the first N-1 input bytes of that block."""
+        pad_size = num_extra_pad+block_size-1-len(known)%block_size
         in_bytes = bytes([0]*pad_size)
-        idx = len(known)//block_size
+        idx = pre_idx+len(known)//block_size
         total = in_bytes+bytes(known)
-        last_frag = total[-block_size+1:]
+        last_frag = bytes([0]*num_extra_pad)+total[-block_size+1:]
         return (in_bytes, idx, last_frag)
+
+    def get_block(cipher, idx):
+        return cipher[idx*block_size:(idx+1)*block_size]
 
     secret = bytearray([])
     remaining = inf
     while remaining > 0:
         in_bytes, idx, last_frag = determine_padding(secret)
-        cipher_frags = [encrypt_func(last_frag+x)[:block_size] for x in single_bytes]
+        cipher_frags = [get_block(encrypt_func(last_frag+x), pre_idx) for x in single_bytes]
         plain_dict = {x: y[0] for x, y in zip(cipher_frags, single_bytes)}
         cipher = encrypt_func(in_bytes)
-        cipher_frag = cipher[idx*block_size:(idx+1)*block_size]
+        cipher_frag = get_block(cipher, idx)
         secret.append(plain_dict[cipher_frag])
-        remaining = len(cipher)-len(in_bytes)-len(secret)
+        remaining = len(cipher)-len(in_bytes)-len(secret)-pre_len
     return bytes(secret)
+
+def find_prefix_len(encrypt_func, block_size):
+    """For an arbitrary black-box encryption function operating in ECB mode, which
+    may append an unknown, fixed-length byte array to the submitted plain-text,
+    determine the length of this uknown prefix."""
+    for num in range(1, block_size+2):
+        byte_1 = encrypt_func(bytes([0]*num))
+        byte_2 = encrypt_func(bytes([1]*num))
+        diff_list = find_diff_blocks(byte_1, byte_2, block_size)
+        if len(diff_list) > 1:
+            return (diff_list[0]+1)*block_size-num+1
+    return 0
+
+def find_diff_blocks(byte_1, byte_2, block_size):
+    """Return list (in order) of which blocks differ between two byte-likes"""
+    num_blocks = len(byte_1)//block_size
+    blocks_1 = [byte_1[x*block_size:(x+1)*block_size] for x in range(num_blocks)]
+    blocks_2 = [byte_2[x*block_size:(x+1)*block_size] for x in range(num_blocks)]
+    return [x for x in range(num_blocks) if blocks_1[x] != blocks_2[x]]
