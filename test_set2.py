@@ -12,6 +12,11 @@ UNKNOWN_PLAIN = cu.base64_to_bytes(
    +'IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK')
 UNKNOWN_PREFIX = cu.random_bytes(randint(0, 24))
 
+UNKNOWN_KEY_TWO = cu.random_bytes()
+UNKNOWN_IV = cu.random_bytes()
+PREFIX_TWO = bytes('comment1=cooking%20MCs;userdata=', 'utf-8')
+SUFFIX_TWO = bytes(';comment2=%20like%20a%20pound%20of%20bacon', 'utf-8')
+
 def encryption_oracle(plain):
     key = cu.random_bytes()
     encrypt_ECB = choice([True, False])
@@ -74,6 +79,28 @@ def cut_and_paste_attack(encrypt_func):
 
     return cipher[:block_size]+cipher[2*block_size:3*block_size]+cipher[block_size:2*block_size]
 
+def encrypt16(plain, alter_invalid=True):
+    if alter_invalid:
+        byte_list = []
+        for byte in plain:
+            byte = bytes([byte])
+            if byte==bytes(';', 'utf-8') or byte==bytes('=', 'utf-8'):
+                byte_list.append(bytes('?', 'utf-8'))
+            else:
+                byte_list.append(byte)
+        plain = b''.join(byte_list)
+    plain = PREFIX_TWO+plain+SUFFIX_TWO
+    return cu.encrypt_AES_CBC(plain, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
+
+def decrypt16(cipher):
+    plain = cu.decrypt_AES_CBC(cipher, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
+    tokenized = plain.split(bytes(';', 'utf-8'))
+    for token in tokenized:
+        parts = token.split(bytes('=', 'utf-8'))
+        if parts[0] == bytes('admin', 'utf-8'):
+            return True
+    return False
+
 class Set2(TestCase):
 
     def test_k_v_parser(self):
@@ -100,6 +127,13 @@ class Set2(TestCase):
     def test_find_prefix_len(self):
         self.assertEqual(cu.find_prefix_len(black_box, AES.block_size),
                          len(UNKNOWN_PREFIX))
+
+    def test_black_box_16(self):
+        plain = bytes(';admin=True', 'utf-8')
+        cipher = encrypt16(plain, alter_invalid=False)
+        self.assertTrue(decrypt16(cipher))
+        cipher = encrypt16(plain)
+        self.assertFalse(decrypt16(cipher))
 
     # implement PKCS#7 padding
     def test_9(self):
@@ -150,4 +184,19 @@ class Set2(TestCase):
         self.assertEqual(cu.unpad_PKCS7(good_padding_2), good_padding_2)
         self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_1)
         self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_2)
+
+    def test_16(self):
+        """Assume that we know the prefix length is exactly 32 bytes
+        (2 blocks). Assume also that we know ';' and '=' are changed to
+        '?'. No clue how to do this otherwise..."""
+        plain = bytes(';admin=True', 'utf-8')
+        cipher = encrypt16(plain)
+        cipher_blocks = [cipher[x*16:(x+1)*16] for x in range(len(cipher)//16)]
+        attack_bytes = [bytes([x]) for x in cipher_blocks[1]]
+        attack_bytes[0] = cu.XOR_bytes(b'?', cu.XOR_bytes(attack_bytes[0], b';'))
+        attack_bytes[6] = cu.XOR_bytes(b'?', cu.XOR_bytes(attack_bytes[6], b'='))
+        attack_bytes = b''.join(attack_bytes)
+        cipher_blocks[1] = attack_bytes
+        cipher = b''.join(cipher_blocks)
+        self.assertTrue(decrypt16(cipher))
 
