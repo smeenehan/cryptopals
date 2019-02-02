@@ -14,8 +14,8 @@ UNKNOWN_PREFIX = cu.random_bytes(randint(0, 24))
 
 UNKNOWN_KEY_TWO = cu.random_bytes()
 UNKNOWN_IV = cu.random_bytes()
-PREFIX_TWO = bytes('comment1=cooking%20MCs;userdata=', 'utf-8')
-SUFFIX_TWO = bytes(';comment2=%20like%20a%20pound%20of%20bacon', 'utf-8')
+PREFIX_TWO = b'comment1=cooking%20MCs;userdata='
+SUFFIX_TWO = b';comment2=%20like%20a%20pound%20of%20bacon'
 
 def encryption_oracle(plain):
     key = cu.random_bytes()
@@ -84,8 +84,8 @@ def encrypt16(plain, alter_invalid=True):
         byte_list = []
         for byte in plain:
             byte = bytes([byte])
-            if byte==bytes(';', 'utf-8') or byte==bytes('=', 'utf-8'):
-                byte_list.append(bytes('?', 'utf-8'))
+            if byte==b';' or byte==b'=':
+                byte_list.append(b'?')
             else:
                 byte_list.append(byte)
         plain = b''.join(byte_list)
@@ -94,10 +94,10 @@ def encrypt16(plain, alter_invalid=True):
 
 def decrypt16(cipher):
     plain = cu.decrypt_AES_CBC(cipher, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
-    tokenized = plain.split(bytes(';', 'utf-8'))
+    tokenized = plain.split(b';')
     for token in tokenized:
-        parts = token.split(bytes('=', 'utf-8'))
-        if parts[0] == bytes('admin', 'utf-8'):
+        parts = token.split(b'=')
+        if parts[0] == b'admin':
             return True
     return False
 
@@ -129,7 +129,7 @@ class Set2(TestCase):
                          len(UNKNOWN_PREFIX))
 
     def test_black_box_16(self):
-        plain = bytes(';admin=True', 'utf-8')
+        plain = b';admin=True'
         cipher = encrypt16(plain, alter_invalid=False)
         self.assertTrue(decrypt16(cipher))
         cipher = encrypt16(plain)
@@ -137,14 +137,14 @@ class Set2(TestCase):
 
     # implement PKCS#7 padding
     def test_9(self):
-        key = bytes('YELLOW SUBMARINE', 'utf-8')
-        padded = bytes('YELLOW SUBMARINE\x04\x04\x04\x04', 'utf-8')
+        key = b'YELLOW SUBMARINE'
+        padded = b'YELLOW SUBMARINE\x04\x04\x04\x04'
         self.assertEqual(cu.pad_PKCS7(key, block_size=20), padded)
         self.assertEqual(cu.pad_PKCS7(key, block_size=len(key)), key)
 
     # implement CBC mode
     def test_10(self):
-        key = bytes('YELLOW SUBMARINE', 'utf-8')
+        key = b'YELLOW SUBMARINE'
         plain_expect = cu.read_utf8('data/Set_1_7_decrypted.txt')
         cipher = cu.read_base64('data/Set_2_10.txt')
         plain = cu.decrypt_AES_CBC(cipher, key)
@@ -175,12 +175,12 @@ class Set2(TestCase):
 
     # PKCS#7 padding validation
     def test_15(self):
-        good_padding = bytes('ICE ICE BABY\x04\x04\x04\x04', 'utf-8')
-        good_padding_2 = bytes('YELLOW SUBMARINE', 'utf-8')
-        bad_padding_1 = bytes('ICE ICE BABY\x05\x05\x05\x05', 'utf-8')
-        bad_padding_2 = bytes('ICE ICE BABY\x01\x02\x03\x04', 'utf-8')
+        good_padding = b'ICE ICE BABY\x04\x04\x04\x04'
+        good_padding_2 = b'YELLOW SUBMARINE'
+        bad_padding_1 = b'ICE ICE BABY\x05\x05\x05\x05'
+        bad_padding_2 = b'ICE ICE BABY\x01\x02\x03\x04'
 
-        self.assertEqual(cu.unpad_PKCS7(good_padding), bytes('ICE ICE BABY', 'utf-8'))
+        self.assertEqual(cu.unpad_PKCS7(good_padding), b'ICE ICE BABY')
         self.assertEqual(cu.unpad_PKCS7(good_padding_2), good_padding_2)
         self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_1)
         self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_2)
@@ -189,14 +189,13 @@ class Set2(TestCase):
         """Assume that we know the prefix length is exactly 32 bytes
         (2 blocks). Assume also that we know ';' and '=' are changed to
         '?'. No clue how to do this otherwise..."""
-        plain = bytes(';admin=True', 'utf-8')
+        plain = b';admin=True'
         cipher = encrypt16(plain)
         cipher_blocks = [cipher[x*16:(x+1)*16] for x in range(len(cipher)//16)]
         attack_bytes = [bytes([x]) for x in cipher_blocks[1]]
         attack_bytes[0] = cu.XOR_bytes(b'?', cu.XOR_bytes(attack_bytes[0], b';'))
         attack_bytes[6] = cu.XOR_bytes(b'?', cu.XOR_bytes(attack_bytes[6], b'='))
-        attack_bytes = b''.join(attack_bytes)
-        cipher_blocks[1] = attack_bytes
+        cipher_blocks[1] = b''.join(attack_bytes)
         cipher = b''.join(cipher_blocks)
         self.assertTrue(decrypt16(cipher))
 

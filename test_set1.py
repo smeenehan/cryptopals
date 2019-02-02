@@ -18,8 +18,8 @@ class Set1(TestCase):
         self.assertEqual(cu.bytes_to_base64(byte_array), base64_string)
 
     def test_Hamming(self):
-        bytes_1 = bytes('this is a test', 'utf-8')
-        bytes_2 = bytes('wokka wokka!!!', 'utf-8')
+        bytes_1 = b'this is a test'
+        bytes_2 = b'wokka wokka!!!'
         self.assertEqual(cu.Hamming_dist(bytes_1, bytes_2), 37)
 
     # Convert hex to base 64
@@ -59,9 +59,9 @@ class Set1(TestCase):
 
     # implement repeating-key XOR
     def test_5(self):
-        plain_bytes = bytes("Burning 'em, if you ain't quick and nimble\n" \
-                           +'I go crazy when I hear a cymbal', 'utf-8')
-        key_bytes = bytes('ICE', 'utf-8')
+        plain_bytes = b"Burning 'em, if you ain't quick and nimble\n" \
+                     +b'I go crazy when I hear a cymbal'
+        key_bytes = b'ICE'
         expected_bytes = cu.hex_to_bytes(
             '0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324' \
            +'272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b202831652' \
@@ -71,7 +71,7 @@ class Set1(TestCase):
 
     # break repeating-key XOR
     def test_6(self):
-        key_expect = bytes('Terminator X: Bring the noise', 'utf-8')
+        key_expect = b'Terminator X: Bring the noise'
         plain_expect = cu.read_utf8('data/Set_1_6_decrypted.txt')
         cipher = cu.read_base64('data/Set_1_6.txt')
         (plain, key) = cu.decrypt_repeating_XOR(cipher)
@@ -81,7 +81,7 @@ class Set1(TestCase):
 
     # AES in ECB mode
     def test_7(self):
-        key = bytes('YELLOW SUBMARINE', 'utf-8')
+        key = b'YELLOW SUBMARINE'
         plain_expect = cu.read_utf8('data/Set_1_7_decrypted.txt')
         cipher = cu.read_base64('data/Set_1_7.txt')
         aes = AES.new(key, AES.MODE_ECB)
