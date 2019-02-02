@@ -153,6 +153,23 @@ def pad_PKCS7(unpadded, block_size=AES.block_size):
     padding = bytes([num_bytes_needed]*num_bytes_needed)
     return unpadded+padding
 
+def unpad_PKCS7(padded, block_size=AES.block_size):
+    """Unpad according to PKCS#7 standard. Raises ValueError if string has
+    invalid padding"""
+    begin, last_block = padded[:-block_size], padded[-block_size:]
+    test_pad = []
+    padding_bytes = [x for x in range(1, block_size)]
+    for test_byte in reversed(last_block):
+        if test_byte in padding_bytes:
+            test_pad.append(test_byte)
+        else:
+            break
+    pad_len = len(test_pad)
+    if pad_len>0:
+        if set(test_pad)!={pad_len}:
+            raise ValueError('Invalid PKCS#7 padding detected')
+    return begin+last_block[:block_size-pad_len]
+
 def decrypt_AES_CBC(cipher, key, iv=None):
     block_size = AES.block_size
     if iv is None:

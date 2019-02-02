@@ -69,7 +69,7 @@ def cut_and_paste_attack(encrypt_func):
     """Assume the token is: 'email=<in>&uid=10&role=user'. Generate ciphertext
     such that the second block begins with admin and has appropriate PKCS#7
     padding, and the third block ends with '&role='"""
-    fake_email = 'fooey@bar.'+'admin'+'\x0b'*11+'com'
+    fake_email = 'fooey@bar.'+'admin'+'\x0b'*(block_size-5)+'com'
     cipher = encrypt_func(fake_email)
 
     return cipher[:block_size]+cipher[2*block_size:3*block_size]+cipher[block_size:2*block_size]
@@ -138,3 +138,16 @@ class Set2(TestCase):
         encrypted = cut_and_paste_attack(encrypt_profile)
         user_profile = decrypt_profile(encrypted)
         self.assertEqual(user_profile['role'], 'admin')
+
+    # PKCS#7 padding validation
+    def test_15(self):
+        good_padding = bytes('ICE ICE BABY\x04\x04\x04\x04', 'utf-8')
+        good_padding_2 = bytes('YELLOW SUBMARINE', 'utf-8')
+        bad_padding_1 = bytes('ICE ICE BABY\x05\x05\x05\x05', 'utf-8')
+        bad_padding_2 = bytes('ICE ICE BABY\x01\x02\x03\x04', 'utf-8')
+
+        self.assertEqual(cu.unpad_PKCS7(good_padding), bytes('ICE ICE BABY', 'utf-8'))
+        self.assertEqual(cu.unpad_PKCS7(good_padding_2), good_padding_2)
+        self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_1)
+        self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_2)
+
