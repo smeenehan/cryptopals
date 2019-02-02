@@ -177,11 +177,13 @@ class Set2(TestCase):
     def test_15(self):
         good_padding = b'ICE ICE BABY\x04\x04\x04\x04'
         good_padding_2 = b'YELLOW SUBMARINE'
+        good_padding_3 = b'ICE ICE BABY\x04\x03\x02\x01'
         bad_padding_1 = b'ICE ICE BABY\x05\x05\x05\x05'
         bad_padding_2 = b'ICE ICE BABY\x01\x02\x03\x04'
 
         self.assertEqual(cu.unpad_PKCS7(good_padding), b'ICE ICE BABY')
         self.assertEqual(cu.unpad_PKCS7(good_padding_2), good_padding_2)
+        self.assertEqual(cu.unpad_PKCS7(good_padding_3), b'ICE ICE BABY\x04\x03\x02')
         self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_1)
         self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_2)
 
