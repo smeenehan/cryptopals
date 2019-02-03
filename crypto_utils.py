@@ -287,18 +287,24 @@ def decrypt_CBC_padding_oracle(cipher, oracle, block_size=AES.block_size):
     known_blocks = []
     num_blocks = len(cipher)//block_size
 
+    def prepare_attack_block(mod_cipher, known):
+        """Figure out which byte we need to twiddle in the ciphertext, and prepare
+        the rest of the second-to-last block so we'll get the right padding."""
+        num_known = len(known)
+        pad_byte = num_known+1
+        to_twiddle = -block_size-num_known-1
+        if num_known>0:
+            known_cipher = mod_cipher[to_twiddle+1:-block_size]
+            alter = XOR_bytes(XOR_bytes(known_cipher, known),
+                              bytes([pad_byte])*num_known)
+            mod_cipher[to_twiddle+1:-block_size] = alter
+        return to_twiddle, pad_byte
+
     def decrypt_next_byte(mod_cipher, known):
         """Given the cipher text, up to block N, and existing known plaintext
         from the end of block N, decrypt the next byte starting from the end, and
         return the new known plain (one byte longer)"""
-        num_known = len(known)
-        pad_byte = num_known+1
-        if num_known>0:
-            known_cipher = mod_cipher[-block_size-num_known:-block_size]
-            alter = XOR_bytes(XOR_bytes(known_cipher, known),
-                              bytes([pad_byte])*num_known)
-            mod_cipher[-block_size-num_known:-block_size] = alter
-        byte_to_twiddle = -block_size-num_known-1
+        byte_to_twiddle, pad_byte = prepare_attack_block(mod_cipher, known)
         orig_cipher = mod_cipher[byte_to_twiddle]
         for x in range(256):
             mod_cipher[byte_to_twiddle] = x
