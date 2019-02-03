@@ -140,7 +140,8 @@ class Set2(TestCase):
         key = b'YELLOW SUBMARINE'
         padded = b'YELLOW SUBMARINE\x04\x04\x04\x04'
         self.assertEqual(cu.pad_PKCS7(key, block_size=20), padded)
-        self.assertEqual(cu.pad_PKCS7(key, block_size=len(key)), key)
+        self.assertEqual(cu.pad_PKCS7(key, block_size=len(key)),
+                         key+bytes([len(key)])*len(key))
 
     # implement CBC mode
     def test_10(self):
@@ -149,6 +150,7 @@ class Set2(TestCase):
         cipher = cu.read_base64('data/Set_2_10.txt')
         plain = cu.decrypt_AES_CBC(cipher, key)
         self.assertEqual(plain, plain_expect)
+        plain = cu.unpad_PKCS7(plain)
         recipher = cu.encrypt_AES_CBC(plain, key)
         self.assertEqual(recipher, cipher)
 
@@ -165,6 +167,7 @@ class Set2(TestCase):
         self.assertEqual(block_size, AES.block_size)
         self.assertTrue(cu.ECB_oracle(black_box, block_size=block_size))
         secret = cu.chosen_plaintext_ECB(black_box, block_size=block_size)
+        secret = cu.unpad_PKCS7(secret)
         self.assertEqual(secret, UNKNOWN_PLAIN)
 
     # ECB cut-and-paste
@@ -176,16 +179,18 @@ class Set2(TestCase):
     # PKCS#7 padding validation
     def test_15(self):
         good_padding = b'ICE ICE BABY\x04\x04\x04\x04'
-        good_padding_2 = b'YELLOW SUBMARINE'
-        good_padding_3 = b'ICE ICE BABY\x04\x03\x02\x01'
-        bad_padding_1 = b'ICE ICE BABY\x05\x05\x05\x05'
+        good_padding_2 = b'ICE ICE BABY\x04\x03\x02\x01'
+        good_padding_3 = b'YELLOW SUBMARINE'+bytes([16])*16
+        bad_padding = b'ICE ICE BABY\x05\x05\x05\x05'
         bad_padding_2 = b'ICE ICE BABY\x01\x02\x03\x04'
+        bad_padding_3 = b'YELLOW SUBMARINE'
 
         self.assertEqual(cu.unpad_PKCS7(good_padding), b'ICE ICE BABY')
-        self.assertEqual(cu.unpad_PKCS7(good_padding_2), good_padding_2)
-        self.assertEqual(cu.unpad_PKCS7(good_padding_3), b'ICE ICE BABY\x04\x03\x02')
-        self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_1)
+        self.assertEqual(cu.unpad_PKCS7(good_padding_2), b'ICE ICE BABY\x04\x03\x02')
+        self.assertEqual(cu.unpad_PKCS7(good_padding_3), b'YELLOW SUBMARINE')
+        self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding)
         self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_2)
+        self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_3)
 
     def test_16(self):
         """Assume that we know the prefix length is exactly 32 bytes

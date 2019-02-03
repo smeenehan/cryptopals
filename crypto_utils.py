@@ -149,7 +149,7 @@ def detect_ECB(cipher, block_size = AES.block_size):
 def pad_PKCS7(unpadded, block_size=AES.block_size):
     """Pad to given block size according to PKCS#7 standard"""
     mod_len = len(unpadded)%block_size
-    num_bytes_needed = block_size-mod_len if mod_len > 0 else 0
+    num_bytes_needed = block_size-mod_len
     padding = bytes([num_bytes_needed]*num_bytes_needed)
     return unpadded+padding
 
@@ -158,13 +158,11 @@ def unpad_PKCS7(padded, block_size=AES.block_size):
     invalid padding"""
     padding_bytes = [x for x in range(1, block_size)]
     last_byte = padded[-1]
-    pad_len = last_byte if last_byte in padding_bytes else 0
-    if pad_len==0:
-        return padded
-    test_pad = padded[-pad_len:]
-    if set(test_pad)!={pad_len}:
-        raise ValueError('Invalid PKCS#7 padding detected')
-    return padded[:-pad_len]
+    if last_byte>0 and last_byte<=block_size:
+        test_pad = padded[-last_byte:]
+        if set(test_pad)=={last_byte}:
+            return padded[:-last_byte]
+    raise ValueError('Invalid PKCS#7 padding detected')
 
 def decrypt_AES_CBC(cipher, key, iv=None):
     block_size = AES.block_size
@@ -186,8 +184,7 @@ def encrypt_AES_CBC(plain, key, iv=None):
     if iv is None:
         iv = bytes([0]*block_size)
     aes = AES.new(key, AES.MODE_ECB)
-    if len(plain)%block_size > 0:
-        plain = pad_PKCS7(plain)
+    plain = pad_PKCS7(plain)
     num_blocks = len(plain)//block_size
 
     cipher = bytearray([])
@@ -279,3 +276,42 @@ def find_diff_blocks(byte_1, byte_2, block_size):
     blocks_1 = [byte_1[x*block_size:(x+1)*block_size] for x in range(num_blocks)]
     blocks_2 = [byte_2[x*block_size:(x+1)*block_size] for x in range(num_blocks)]
     return [x for x in range(num_blocks) if blocks_1[x] != blocks_2[x]]
+
+def decrypt_CBC_padding_oracle(cipher, oracle, block_size=AES.block_size):
+    """Decrypt a cipher text, encrypted with CBC, given an oracle function that
+    will take a ciphertext as input and return True or False depending on whether
+    the decrypted plaintext has valid PKCS#7 padding.
+
+    For simplicity, I'm assuming the IV is prepended to the ciphertext, though this
+    is not strictly necessary. We just need to know what it is."""
+    known_blocks = []
+    num_blocks = len(cipher)//block_size
+
+    def decrypt_next_byte(mod_cipher, known):
+        """Given the cipher text, up to block N, and existing known plaintext
+        from the end of block N, decrypt the next byte starting from the end, and
+        return the new known plain (one byte longer)"""
+        num_known = len(known)
+        pad_byte = num_known+1
+        if num_known>0:
+            known_cipher = mod_cipher[-block_size-num_known:-block_size]
+            alter = XOR_bytes(XOR_bytes(known_cipher, known),
+                              bytes([pad_byte])*num_known)
+            mod_cipher[-block_size-num_known:-block_size] = alter
+        byte_to_twiddle = -block_size-num_known-1
+        orig_cipher = mod_cipher[byte_to_twiddle]
+        for x in range(256):
+            mod_cipher[byte_to_twiddle] = x
+            if oracle(mod_cipher) == True:
+                new_cipher = x
+                break;
+        new_known = (orig_cipher^new_cipher)^pad_byte
+        return bytes([new_known])+known
+
+    for idx in range(num_blocks-1):
+        known = bytes([])
+        for jdx in range(block_size):
+            mod_cipher = bytearray(cipher[:len(cipher)-idx*block_size])
+            known = decrypt_next_byte(mod_cipher, known)
+        known_blocks.append(known)
+    return b''.join([x for x in reversed(known_blocks)])
