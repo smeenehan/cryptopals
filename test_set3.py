@@ -43,3 +43,46 @@ class Set3(TestCase):
         plain = cu.decrypt_CBC_padding_oracle(cipher, pad_check)
         plain = cu.unpad_PKCS7(plain)
         self.assertTrue(plain in RANDOM_PLAINS)
+
+    def test_18(self):
+        cipher = cu.base64_to_bytes('L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSvoOLSFQ==')
+        expect = b"Yo, VIP Let's kick it Ice, Ice, baby Ice, Ice, baby "
+        key = b'YELLOW SUBMARINE'
+        plain = cu.AES_CTR(cipher, key)
+        self.assertEqual(plain, expect)
+
+    def test_19_20(self):
+        cipher_list = []
+        plain_list = []
+        key = cu.random_bytes()
+        with open('data/Set_3_19.txt', 'r') as f:
+            for line in f:
+                plain = cu.base64_to_bytes(line)
+                plain_list.append(plain)
+                cipher_list.append(cu.AES_CTR(plain, key))
+        with open('data/Set_3_20.txt', 'r') as f:
+            for line in f:
+                plain = cu.base64_to_bytes(line)
+                plain_list.append(plain)
+                cipher_list.append(cu.AES_CTR(plain, key))
+
+        min_len = len(min(cipher_list, key=len))
+        cipher_trunc = [x[:min_len] for x in cipher_list]
+        cipher_cat = b''. join(cipher_trunc)
+        keystream = cu.get_repeating_XOR_key(cipher_cat, min_len)
+        plain_cat = cu.XOR_bytes(keystream, cipher_cat)
+        plain_trunc = [plain_cat[x:x+min_len] for x in range(0, len(plain_cat), min_len)]
+        total, correct = 0, 0
+        for real, guess in zip(plain_list, plain_trunc):
+            total += 1
+            correct +=  real[:min_len].decode('utf-8').lower()==guess.decode('utf-8').lower()
+        self.assertTrue(correct/total>0.95)
+
+    def test_21(self):
+        mt_output = []
+        with open('data/MT19937_out.txt', 'r') as f:
+            for line in f:
+                mt_output.append(int(line))
+        mt_gen = cu.MT19937_gen(seed=0)
+        for truth, test in zip(mt_output, mt_gen):
+            self.assertEqual(truth, test)

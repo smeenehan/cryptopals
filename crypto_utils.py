@@ -1,6 +1,7 @@
 import base64
 from collections import defaultdict
 from Crypto.Cipher import AES
+from datetime import datetime
 from itertools import cycle, combinations
 from math import inf
 from random import randint
@@ -306,6 +307,7 @@ def decrypt_CBC_padding_oracle(cipher, oracle, block_size=AES.block_size):
         return the new known plain (one byte longer)"""
         byte_to_twiddle, pad_byte = prepare_attack_block(mod_cipher, known)
         orig_cipher = mod_cipher[byte_to_twiddle]
+        new_cipher = 0
         for x in range(256):
             mod_cipher[byte_to_twiddle] = x
             if oracle(mod_cipher) == True:
@@ -321,3 +323,69 @@ def decrypt_CBC_padding_oracle(cipher, oracle, block_size=AES.block_size):
             known = decrypt_next_byte(mod_cipher, known)
         known_blocks.append(known)
     return b''.join([x for x in reversed(known_blocks)])
+
+def AES_CTR_stream(key, nonce_val=0):
+    nonce = nonce_val.to_bytes(AES.block_size//2, 'little')
+    count = 0
+    aes = AES.new(key, AES.MODE_ECB)
+
+    def streamer(plain):
+        nonlocal count
+        in_bytes = nonce+count.to_bytes(AES.block_size//2, 'little')
+        keystream = aes.encrypt(in_bytes)
+        keystream = keystream[:len(plain)]
+        cipher = XOR_bytes(plain, keystream)
+        count += 1
+        return cipher
+
+    return streamer
+
+def AES_CTR(in_bytes, key, nonce_val=0):
+    stream = AES_CTR_stream(key, nonce_val=nonce_val)
+    out_blocks = []
+    for x in range(0, len(in_bytes), AES.block_size):
+        out = stream(in_bytes[x:x+AES.block_size])
+        out_blocks.append(out)
+    return b''.join(out_blocks)
+
+def MT19937_gen(seed=None):
+    """Return a generator for random numbers using the 32-bit Mersenne Twister
+    algorithm. The seed can be any integer, defaulting to the current POSIX
+    timestamp if left default."""
+    if seed is None:
+        seed = int(datetime.now().totimestamp())
+
+    w, n, m, r = 32, 624, 397, 31
+    upper_mask = int('0x80000000', 16)
+    lower_mask = int('0x7fffffff', 16)
+
+    # seeding
+    gen_state = [seed]
+    for idx in range(n-1):
+        prev_val = gen_state[idx]
+        next_val = 1812433253*(prev_val^(prev_val >> w-2))+idx+1
+        next_val &= int('0xffffffff', 16) # AND with 2^32-1 to wrap to 32 bits
+        gen_state.append(next_val)
+    mt_ctr = n
+
+    while True:
+        if mt_ctr >= n:
+            # twisting
+            for idx in range(n):
+                x = (gen_state[idx] & upper_mask) | (gen_state[(idx+1)%n] & lower_mask)
+                xA = x >> 1
+                if x%2 != 0:
+                    xA ^= int('0x9908B0DF', 16)
+                gen_state[idx] = gen_state[(idx+m)%n]^xA
+            mt_ctr = 0
+
+        x = gen_state[mt_ctr]
+        mt_ctr += 1
+
+        # tempering
+        x ^= (x >> 11)
+        x ^= (x << 7) & int('0x9d2c5680', 16)
+        x ^= (x << 15) & int('0xefc60000', 16)
+        x ^= (x >> 18)
+        yield x
+
