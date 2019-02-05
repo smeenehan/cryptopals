@@ -351,21 +351,28 @@ def AES_CTR(in_bytes, key, nonce_val=0):
 def MT19937_gen(seed=None):
     """Return a generator for random numbers using the 32-bit Mersenne Twister
     algorithm. The seed can be any integer, defaulting to the current POSIX
-    timestamp if left default."""
+    timestamp if left default.
+
+    Alternatively, the seed may a list containing a full 624 element internal state,
+    which will be twisted prior to the first output."""
     if seed is None:
         seed = int(datetime.now().totimestamp())
-
     w, n, m, r = 32, 624, 397, 31
+
+    if isinstance(seed, list):
+        if len(seed) != n:
+            raise ValueError('seed must be integer or 624-element list of integers')
+        gen_state = seed
+    else:
+        gen_state = [seed]
+        for idx in range(n-1):
+            prev_val = gen_state[idx]
+            next_val = 1812433253*(prev_val^(prev_val >> w-2))+idx+1
+            next_val &= int('0xffffffff', 16) # AND with 2^32-1 to wrap to 32 bits
+            gen_state.append(next_val)
+
     upper_mask = int('0x80000000', 16)
     lower_mask = int('0x7fffffff', 16)
-
-    # seeding
-    gen_state = [seed]
-    for idx in range(n-1):
-        prev_val = gen_state[idx]
-        next_val = 1812433253*(prev_val^(prev_val >> w-2))+idx+1
-        next_val &= int('0xffffffff', 16) # AND with 2^32-1 to wrap to 32 bits
-        gen_state.append(next_val)
     mt_ctr = n
 
     while True:
@@ -382,10 +389,28 @@ def MT19937_gen(seed=None):
         x = gen_state[mt_ctr]
         mt_ctr += 1
 
-        # tempering
-        x ^= (x >> 11)
-        x ^= (x << 7) & int('0x9d2c5680', 16)
-        x ^= (x << 15) & int('0xefc60000', 16)
-        x ^= (x >> 18)
+        x = MT19937_temper(x)
         yield x
 
+def MT19937_temper(x):
+    x ^= (x >> 11)
+    x ^= (x << 7) & int('0x9d2c5680', 16)
+    x ^= (x << 15) & int('0xefc60000', 16)
+    x ^= (x >> 18)
+    return x
+
+def MT19937_untemper(x):
+    # the last two steps of tempering happen to be self-inverses
+    x ^= (x >> 18)
+    x ^= (x << 15) & int('0xefc60000', 16)
+
+    # undo x ^= (x << 7) & int('0x9d2c5680', 16)
+    x ^= (x & int('0x0012082d', 16)) << 7
+    x ^= (x & int('0x01001080', 16)) << 7
+    x ^= (x & int('0x00084000', 16)) << 7
+    x ^= (x & int('0x00200000', 16)) << 7
+
+    # undo x ^= (x >> 11)
+    x ^= (x & int('0xffe00000', 16)) >> 11
+    x ^= (x & int('0x001ff800', 16)) >> 11
+    return x

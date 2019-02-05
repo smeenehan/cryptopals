@@ -1,5 +1,6 @@
 import crypto_utils as cu
 from Crypto.Cipher import AES
+from datetime import datetime
 from random import choice, randint
 from unittest import TestCase
 
@@ -33,10 +34,23 @@ def pad_check(cipher):
     except ValueError:
         return False
 
+def simulate_random_seed():
+    current_time = int(datetime.now().timestamp())
+    current_time += randint(40, 1000)
+    gen = cu.MT19937_gen(seed=current_time)
+    timestamp = current_time+randint(40, 1000)
+    rng_out = gen.__next__()
+    return current_time, rng_out, timestamp
+
 class Set3(TestCase):
 
     def test_pad_oracle(self):
         self.assertTrue(pad_check(encrypt_random()))
+
+    def test_untemper(self):
+        x = randint(0, int('0xffffffff', 16))
+        tempered_x = cu.MT19937_temper(x)
+        self.assertEqual(x, cu.MT19937_untemper(tempered_x))
 
     def test_17(self):
         cipher = encrypt_random()
@@ -86,3 +100,25 @@ class Set3(TestCase):
         mt_gen = cu.MT19937_gen(seed=0)
         for truth, test in zip(mt_output, mt_gen):
             self.assertEqual(truth, test)
+
+    def test_22(self):
+        """Given the output of the MT19937 RNG, assume we know this is the first
+        output and that the RNG was seeded with the timestamp sometime within the
+        last ~30 minutes. Then, we can just enumerate all possibilities."""
+        real_seed, rng_out, timestamp = simulate_random_seed()
+        for idx in range(0, 2000):
+            test_seed = timestamp-idx
+            test_gen = cu.MT19937_gen(seed=test_seed)
+            if test_gen.__next__() == rng_out:
+                break
+        self.assertEqual(test_seed, real_seed)
+
+    def test_23(self):
+        rand_gen = cu.MT19937_gen(seed=int(datetime.now().timestamp()))
+        rand_state = []
+        for _, rand_out in zip(range(624), rand_gen):
+            rand_state.append(cu.MT19937_untemper(rand_out))
+        new_gen = cu.MT19937_gen(seed=rand_state)
+        for _ in range(1000):
+            self.assertEqual(rand_gen.__next__(), new_gen.__next__())
+
