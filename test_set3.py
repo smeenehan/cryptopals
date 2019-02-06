@@ -48,7 +48,7 @@ class Set3(TestCase):
         self.assertTrue(pad_check(encrypt_random()))
 
     def test_untemper(self):
-        x = randint(0, int('0xffffffff', 16))
+        x = randint(0, 0xffffffff)
         tempered_x = cu.MT19937_temper(x)
         self.assertEqual(x, cu.MT19937_untemper(tempered_x))
 
@@ -109,7 +109,7 @@ class Set3(TestCase):
         for idx in range(0, 2000):
             test_seed = timestamp-idx
             test_gen = cu.MT19937_gen(seed=test_seed)
-            if test_gen.__next__() == rng_out:
+            if next(test_gen) == rng_out:
                 break
         self.assertEqual(test_seed, real_seed)
 
@@ -120,5 +120,6 @@ class Set3(TestCase):
             rand_state.append(cu.MT19937_untemper(rand_out))
         new_gen = cu.MT19937_gen(seed=rand_state)
         for _ in range(1000):
-            self.assertEqual(rand_gen.__next__(), new_gen.__next__())
+            self.assertEqual(next(rand_gen), next(new_gen))
+
 

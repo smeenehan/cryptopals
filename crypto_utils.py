@@ -368,11 +368,11 @@ def MT19937_gen(seed=None):
         for idx in range(n-1):
             prev_val = gen_state[idx]
             next_val = 1812433253*(prev_val^(prev_val >> w-2))+idx+1
-            next_val &= int('0xffffffff', 16) # AND with 2^32-1 to wrap to 32 bits
+            next_val &= 0xffffffff # wrap to 32 bits
             gen_state.append(next_val)
 
-    upper_mask = int('0x80000000', 16)
-    lower_mask = int('0x7fffffff', 16)
+    upper_mask = 0x80000000
+    lower_mask = 0x7fffffff
     mt_ctr = n
 
     while True:
@@ -382,7 +382,7 @@ def MT19937_gen(seed=None):
                 x = (gen_state[idx] & upper_mask) | (gen_state[(idx+1)%n] & lower_mask)
                 xA = x >> 1
                 if x%2 != 0:
-                    xA ^= int('0x9908B0DF', 16)
+                    xA ^= 0x9908B0DF
                 gen_state[idx] = gen_state[(idx+m)%n]^xA
             mt_ctr = 0
 
@@ -394,23 +394,23 @@ def MT19937_gen(seed=None):
 
 def MT19937_temper(x):
     x ^= (x >> 11)
-    x ^= (x << 7) & int('0x9d2c5680', 16)
-    x ^= (x << 15) & int('0xefc60000', 16)
+    x ^= (x << 7) & 0x9d2c5680
+    x ^= (x << 15) & 0xefc60000
     x ^= (x >> 18)
     return x
 
 def MT19937_untemper(x):
     # the last two steps of tempering happen to be self-inverses
     x ^= (x >> 18)
-    x ^= (x << 15) & int('0xefc60000', 16)
+    x ^= (x << 15) & 0xefc60000
 
-    # undo x ^= (x << 7) & int('0x9d2c5680', 16)
-    x ^= (x & int('0x0012082d', 16)) << 7
-    x ^= (x & int('0x01001080', 16)) << 7
-    x ^= (x & int('0x00084000', 16)) << 7
-    x ^= (x & int('0x00200000', 16)) << 7
+    # undo x ^= (x << 7) & 0x9d2c5680
+    x ^= (x & 0x0012082d) << 7
+    x ^= (x & 0x01001080) << 7
+    x ^= (x & 0x00084000) << 7
+    x ^= (x & 0x00200000) << 7
 
     # undo x ^= (x >> 11)
-    x ^= (x & int('0xffe00000', 16)) >> 11
-    x ^= (x & int('0x001ff800', 16)) >> 11
+    x ^= (x & 0xffe00000) >> 11
+    x ^= (x & 0x001ff800) >> 11
     return x
