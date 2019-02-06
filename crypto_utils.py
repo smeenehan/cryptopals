@@ -414,3 +414,17 @@ def MT19937_untemper(x):
     x ^= (x & 0xffe00000) >> 11
     x ^= (x & 0x001ff800) >> 11
     return x
+
+def MT19937_cipher(in_bytes, key):
+    keystream = MT19937_gen(seed=key)
+    out_bytes = bytearray([])
+    shift_masks = [(24, 0xff000000), (16, 0x00ff0000),
+                   (8, 0x0000ff00), (0, 0x000000ff)]
+    for idx, plain_byte in enumerate(in_bytes):
+        shift_index = idx%4
+        if shift_index == 0:
+            key_bytes = next(keystream)
+        shift, mask = shift_masks[shift_index]
+        key_byte = (key_bytes & mask) >> shift
+        out_bytes.append(plain_byte^key_byte)
+    return out_bytes

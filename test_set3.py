@@ -42,6 +42,21 @@ def simulate_random_seed():
     rng_out = gen.__next__()
     return current_time, rng_out, timestamp
 
+def random_stream_encrypt(known):
+    prefix_num = randint(10, 50)
+    prefix = cu.random_bytes(count=prefix_num)
+    plain = prefix+known
+    key = randint(0, 0xffff)
+    cipher = cu.MT19937_cipher(plain, key)
+    return cipher, key
+
+def pw_token_gen():
+    current_time = int(datetime.now().timestamp())
+    return next(cu.MT19937_gen(seed=current_time))
+
+def is_token_from_RNG(token):
+    return token == pw_token_gen()
+
 class Set3(TestCase):
 
     def test_pad_oracle(self):
@@ -51,6 +66,13 @@ class Set3(TestCase):
         x = randint(0, 0xffffffff)
         tempered_x = cu.MT19937_temper(x)
         self.assertEqual(x, cu.MT19937_untemper(tempered_x))
+
+    def test_stream_cipher(self):
+        key = 0x59df
+        plain = b"Recognize I'm a fool and you love me!"
+        encrypted = cu.MT19937_cipher(plain, key)
+        decrypted = cu.MT19937_cipher(encrypted, key)
+        self.assertEqual(plain, decrypted)
 
     def test_17(self):
         cipher = encrypt_random()
@@ -122,4 +144,17 @@ class Set3(TestCase):
         for _ in range(1000):
             self.assertEqual(next(rand_gen), next(new_gen))
 
+    def test_24a(self):
+        known = b'Hey, Dirty! Baby, I got your money'
+        cipher, key = random_stream_encrypt(known)
 
+        # ain't no force like brute force...
+        for test_key in range(0xffff):
+            test_plain = cu.MT19937_cipher(cipher, test_key)
+            if test_plain[-len(known):] == known:
+                break
+        self.assertEqual(test_key, key)
+
+    def test_24b(self):
+        pw_token = pw_token_gen()
+        self.assertTrue(is_token_from_RNG(pw_token))
