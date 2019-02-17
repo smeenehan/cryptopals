@@ -3,7 +3,7 @@ from collections import defaultdict
 from Crypto.Cipher import AES
 from datetime import datetime
 from itertools import cycle, combinations
-from math import inf
+from math import ceil, inf
 from random import randint
 from string import ascii_lowercase
 
@@ -48,7 +48,9 @@ def read_utf8(file_path):
         cipher = bytes(f.read(), 'utf-8')
     return cipher
 
-def XOR_bytes(bytes_1, bytes_2):
+def XOR_bytes(bytes_1, bytes_2, repeat=True):
+    if repeat == False:
+        return bytes([x^y for x, y in zip(bytes_1, bytes_2)])
     if len(bytes_1) >= len(bytes_2):
         return bytes([x^y for x, y in zip(bytes_1, cycle(bytes_2))])
     else:
@@ -324,29 +326,49 @@ def decrypt_CBC_padding_oracle(cipher, oracle, block_size=AES.block_size):
         known_blocks.append(known)
     return b''.join([x for x in reversed(known_blocks)])
 
-def AES_CTR_stream(key, nonce_val=0):
-    nonce = nonce_val.to_bytes(AES.block_size//2, 'little')
-    count = 0
-    aes = AES.new(key, AES.MODE_ECB)
+class AES_CTR(object):
+    """Encrypt/decrypt using AES in CTR (stream) mode. Made into a class
+    primarily so that it's easy to make a edit function that can adjust the
+    internal counter."""
 
-    def streamer(plain):
-        nonlocal count
-        in_bytes = nonce+count.to_bytes(AES.block_size//2, 'little')
-        keystream = aes.encrypt(in_bytes)
+    def __init__(self, key, nonce=0):
+        nonce_size = AES.block_size//2
+        if isinstance(nonce, bytes):
+            if len(nonce) != nonce_size:
+                raise ValueError('nonce must be '+nonce_size+' bytes')
+            self._nonce = nonce
+        else:
+            self._nonce = nonce.to_bytes(nonce_size, 'little')
+        self._count = 0
+        self._aes = AES.new(key, AES.MODE_ECB)
+
+    def process(self, plain):
+        step = AES.block_size
+        offsets = range(0, len(plain), step)
+        out_blocks = [self._process_block(plain[x:x+step]) for x in offsets]
+        return b''.join(out_blocks)
+
+    def reset(self):
+        self._count = 0
+
+    def edit(self, cipher, offset_block, new_plain_block):
+        old_count = self._count
+        offset = offset_block*AES.block_size
+        new_cipher = bytearray(cipher)
+        try:
+            self._count = offset_block
+            new_cipher_block = self.process(new_plain_block)
+            new_cipher[offset:offset+len(new_cipher_block)] = new_cipher_block
+        finally:
+            self._count = old_count
+        return new_cipher
+
+    def _process_block(self, plain):
+        in_bytes = self._nonce+self._count.to_bytes(AES.block_size//2, 'little')
+        keystream = self._aes.encrypt(in_bytes)
         keystream = keystream[:len(plain)]
-        cipher = XOR_bytes(plain, keystream)
-        count += 1
-        return cipher
-
-    return streamer
-
-def AES_CTR(in_bytes, key, nonce_val=0):
-    stream = AES_CTR_stream(key, nonce_val=nonce_val)
-    out_blocks = []
-    for x in range(0, len(in_bytes), AES.block_size):
-        out = stream(in_bytes[x:x+AES.block_size])
-        out_blocks.append(out)
-    return b''.join(out_blocks)
+        self._count += 1
+        return XOR_bytes(plain, keystream, repeat=False)
 
 def MT19937_gen(seed=None):
     """Return a generator for random numbers using the 32-bit Mersenne Twister

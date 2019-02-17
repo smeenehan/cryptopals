@@ -74,33 +74,40 @@ class Set3(TestCase):
         decrypted = cu.MT19937_cipher(encrypted, key)
         self.assertEqual(plain, decrypted)
 
+    # CBC padding oracle
     def test_17(self):
         cipher = encrypt_random()
         plain = cu.decrypt_CBC_padding_oracle(cipher, pad_check)
         plain = cu.unpad_PKCS7(plain)
         self.assertTrue(plain in RANDOM_PLAINS)
 
+    # Implement AES-CTR mode
     def test_18(self):
         cipher = cu.base64_to_bytes('L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSvoOLSFQ==')
         expect = b"Yo, VIP Let's kick it Ice, Ice, baby Ice, Ice, baby "
         key = b'YELLOW SUBMARINE'
-        plain = cu.AES_CTR(cipher, key)
+        ctr = cu.AES_CTR(key)
+        plain = ctr.process(cipher) #cu.AES_CTR(cipher, key)
         self.assertEqual(plain, expect)
 
+    # Break fixed-nonce CTR statistically
     def test_19_20(self):
         cipher_list = []
         plain_list = []
         key = cu.random_bytes()
+        ctr = cu.AES_CTR(key)
         with open('data/Set_3_19.txt', 'r') as f:
             for line in f:
                 plain = cu.base64_to_bytes(line)
                 plain_list.append(plain)
-                cipher_list.append(cu.AES_CTR(plain, key))
+                cipher_list.append(ctr.process(plain))
+                ctr.reset()
         with open('data/Set_3_20.txt', 'r') as f:
             for line in f:
                 plain = cu.base64_to_bytes(line)
                 plain_list.append(plain)
-                cipher_list.append(cu.AES_CTR(plain, key))
+                cipher_list.append(ctr.process(plain))
+                ctr.reset()
 
         min_len = len(min(cipher_list, key=len))
         cipher_trunc = [x[:min_len] for x in cipher_list]
@@ -114,6 +121,7 @@ class Set3(TestCase):
             correct +=  real[:min_len].decode('utf-8').lower()==guess.decode('utf-8').lower()
         self.assertTrue(correct/total>0.95)
 
+    # Implement MT19937 RNG
     def test_21(self):
         mt_output = []
         with open('data/MT19937_out.txt', 'r') as f:
@@ -123,6 +131,7 @@ class Set3(TestCase):
         for truth, test in zip(mt_output, mt_gen):
             self.assertEqual(truth, test)
 
+    # Crack MT19937 seed
     def test_22(self):
         """Given the output of the MT19937 RNG, assume we know this is the first
         output and that the RNG was seeded with the timestamp sometime within the
@@ -135,6 +144,7 @@ class Set3(TestCase):
                 break
         self.assertEqual(test_seed, real_seed)
 
+    # Clone MT19937 from output
     def test_23(self):
         rand_gen = cu.MT19937_gen(seed=int(datetime.now().timestamp()))
         rand_state = []
@@ -144,6 +154,8 @@ class Set3(TestCase):
         for _ in range(1000):
             self.assertEqual(next(rand_gen), next(new_gen))
 
+    # Breaking MT19937 stream cipher
+    # This test is quite long to run, so best to keep it commented mostly
     def test_24a(self):
         known = b'Hey, Dirty! Baby, I got your money'
         cipher, key = random_stream_encrypt(known)

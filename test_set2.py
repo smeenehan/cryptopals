@@ -14,6 +14,7 @@ UNKNOWN_PREFIX = cu.random_bytes(randint(0, 24))
 
 UNKNOWN_KEY_TWO = cu.random_bytes()
 UNKNOWN_IV = cu.random_bytes()
+UNKNOWN_NONCE = cu.random_bytes(count=AES.block_size//2)
 PREFIX_TWO = b'comment1=cooking%20MCs;userdata='
 SUFFIX_TWO = b';comment2=%20like%20a%20pound%20of%20bacon'
 
@@ -79,21 +80,21 @@ def cut_and_paste_attack(encrypt_func):
 
     return cipher[:block_size]+cipher[2*block_size:3*block_size]+cipher[block_size:2*block_size]
 
-def encrypt16(plain, alter_invalid=True):
+def encrypt16(plain, alter_invalid=True, CTR=False):
     if alter_invalid:
-        byte_list = []
-        for byte in plain:
-            byte = bytes([byte])
-            if byte==b';' or byte==b'=':
-                byte_list.append(b'?')
-            else:
-                byte_list.append(byte)
-        plain = b''.join(byte_list)
+        plain = plain.replace(b';', b'?')
+        plain = plain.replace(b'=', b'?')
     plain = PREFIX_TWO+plain+SUFFIX_TWO
-    return cu.encrypt_AES_CBC(plain, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
+    if CTR:
+        return cu.AES_CTR(UNKNOWN_KEY, nonce=UNKNOWN_NONCE).process(plain)
+    else:
+        return cu.encrypt_AES_CBC(plain, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
 
-def decrypt16(cipher):
-    plain = cu.decrypt_AES_CBC(cipher, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
+def decrypt16(cipher, CTR=False):
+    if CTR:
+        plain = cu.AES_CTR(UNKNOWN_KEY, nonce=UNKNOWN_NONCE).process(cipher)
+    else:
+        plain = cu.decrypt_AES_CBC(cipher, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
     tokenized = plain.split(b';')
     for token in tokenized:
         parts = token.split(b'=')
@@ -192,17 +193,14 @@ class Set2(TestCase):
         self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_2)
         self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_3)
 
+    # CBC bitflipping attack
     def test_16(self):
         """Assume that we know the prefix length is exactly 32 bytes
         (2 blocks). Assume also that we know ';' and '=' are changed to
         '?'. No clue how to do this otherwise..."""
         plain = b';admin=True'
-        cipher = encrypt16(plain)
-        cipher_blocks = [cipher[x*16:(x+1)*16] for x in range(len(cipher)//16)]
-        attack_bytes = [bytes([x]) for x in cipher_blocks[1]]
-        attack_bytes[0] = cu.XOR_bytes(b'?', cu.XOR_bytes(attack_bytes[0], b';'))
-        attack_bytes[6] = cu.XOR_bytes(b'?', cu.XOR_bytes(attack_bytes[6], b'='))
-        cipher_blocks[1] = b''.join(attack_bytes)
-        cipher = b''.join(cipher_blocks)
+        cipher = bytearray(encrypt16(plain))
+        cipher[16] = cu.XOR_bytes(b'?', cu.XOR_bytes(bytes([cipher[16]]), b';'))[0]
+        cipher[22] = cu.XOR_bytes(b'?', cu.XOR_bytes(bytes([cipher[22]]), b'='))[0]
         self.assertTrue(decrypt16(cipher))
 
