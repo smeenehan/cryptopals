@@ -18,6 +18,35 @@ letter_freqs = {
 
 single_bytes = [bytes([x]) for x in range(256)]
 
+def mask_N(num_bits):
+    """Bit mask for N bits"""
+    return int('1'*num_bits, 2)
+
+def bit_not(value, num_bits):
+    """Bitwise NOT for unsigned integers (since Python ints are signed)"""
+    return mask_N(num_bits)-value
+
+def rot_left(value, count, num_bits):
+    """Left circular shift of integer by count bits, wrapped to N bits.
+    Only allowed for 0 < count < N"""
+    if count<1 or count>num_bits-1:
+        raise ValueError('Only supports circular shifts of 1-(N-1) bits')
+    # return ((value << count) & mask_N(num_bits)) | (value >> (num_bits-count))
+    return ((value << count)  | (value >> (num_bits-count))) & mask_N(num_bits)
+
+def rot_right(value, count, num_bits):
+    """Right circular shift of integer by count bits, wrapped to N bits.
+    Only allowed for 0 < count < N"""
+    if count<1 or count>num_bits-1:
+        raise ValueError('Only supports circular shifts of 1-(N-1) bits')
+    # return (value >> count) | ((value << (num_bits-count)) & mask_N(num_bits))
+    return ((value >> count) | (value << (num_bits-count))) & mask_N(num_bits)
+
+def to_chunks(in_bytes, chunk_size):
+    """Split byte-like into a list of chunks of a specified size"""
+    num_chunks = ceil(len(in_bytes)/chunk_size)
+    return [in_bytes[x*chunk_size:(x+1)*chunk_size] for x in range(num_chunks)]
+
 def hex_to_bytes(hex_string):
     return bytes.fromhex(hex_string)
 
@@ -390,7 +419,7 @@ def MT19937_gen(seed=None):
         for idx in range(n-1):
             prev_val = gen_state[idx]
             next_val = 1812433253*(prev_val^(prev_val >> w-2))+idx+1
-            next_val &= 0xffffffff # wrap to 32 bits
+            next_val &= mask_N(32) # wrap to 32 bits
             gen_state.append(next_val)
 
     upper_mask = 0x80000000
@@ -450,3 +479,59 @@ def MT19937_cipher(in_bytes, key):
         key_byte = (key_bytes & mask) >> shift
         out_bytes.append(plain_byte^key_byte)
     return out_bytes
+
+def SHA_1(message):
+    h0, h1, h2, h3, h4 = 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0
+
+    m = _SHA_1_preprocess(message)
+    m_chunks = to_chunks(m, 64)
+    for chunk in m_chunks:
+        words = _SHA_1_chunk_to_words(chunk)
+        a, b, c, d, e = h0, h1, h2, h3, h4
+        for idx, word in enumerate(words):
+            if idx < 20:
+                f = (b & c) | (bit_not(b, 32) & d)
+                k = 0x5a827999
+            elif idx < 40:
+                f = b^c^d
+                k = 0x6ed9eba1
+            elif idx < 60:
+                f = (b & c) | (b & d) | (c & d)
+                k = 0x8f1bbcdc
+            else:
+                f = b^c^d
+                k = 0xca62c1d6
+            temp = (rot_left(a, 5, 32)+f+e+k+word) & mask_N(32)
+            e, d, c, b, a = d, c, rot_left(b, 30, 32), a, temp
+
+        h0 = (h0+a) & mask_N(32)
+        h1 = (h1+b) & mask_N(32)
+        h2 = (h2+c) & mask_N(32)
+        h3 = (h3+d) & mask_N(32)
+        h4 = (h4+e) & mask_N(32)
+
+    digest = (h0 << 128) | (h1 << 96) | (h2 << 64) | (h3 << 32) | h4
+    return digest.to_bytes(20, 'big')
+
+def _SHA_1_preprocess(message):
+    """Pad message with single '1' bit and enough zero padding to make
+    total padded length a multiple of 512 bits"""
+
+    ml = len(message)*8 # original length, in bits
+    m = message+bytes([128])
+    m_mod = len(m) % 64
+    pad_len = 56-m_mod
+    pad_len += 64 if pad_len<0 else 0
+    m += bytes(pad_len)
+    m += ml.to_bytes(8, 'big')
+    return m
+
+def _SHA_1_chunk_to_words(chunk):
+    """Break 512-bit chunk into 16 32-bit big-endian words, and extend
+    into 80 words using prescribed XOR sequence"""
+    words = [int.from_bytes(x, 'big') for x in to_chunks(chunk, 4)]
+    for idx in range(16, 80):
+        new_word = words[idx-3]^words[idx-8]^words[idx-14]^words[idx-16]
+        new_word = rot_left(new_word, 1, 32)
+        words.append(new_word)
+    return words

@@ -36,6 +36,29 @@ class Set4(TestCase):
         test = ctr.process(new_cipher)
         self.assertEqual(new_plain, test)
 
+    def test_rotate(self):
+        orig = 0b10010110011010011001011001101001
+        rotl = 0b10110011010011001011001101001100
+        rotr = 0b00110010110011010011001011001101
+        self.assertEqual(cu.rot_left(orig, 3, 32), rotl)
+        self.assertEqual(cu.rot_right(orig, 3, 32), rotr)
+
+    def test_bit_not(self):
+        orig = 0b10110011010011001011001101001000
+        not_orig = 0b01001100101100110100110010110111
+        self.assertTrue(cu.bit_not(orig, 32), not_orig)
+
+    def test_sha_1(self):
+        message_1 = b'The quick brown fox jumps over the lazy dog'
+        message_2 = b'The quick brown fox jumps over the lazy cog'
+        message_3 = b''
+        digest_1 = cu.hex_to_bytes('2fd4e1c67a2d28fced849ee1bb76e7391b93eb12')
+        digest_2 = cu.hex_to_bytes('de9f2c7fd25e1b3afad3e85a0bd17d9b100db4b3')
+        digest_3 = cu.hex_to_bytes('da39a3ee5e6b4b0d3255bfef95601890afd80709')
+        self.assertEqual(cu.SHA_1(message_1), digest_1)
+        self.assertEqual(cu.SHA_1(message_2), digest_2)
+        self.assertEqual(cu.SHA_1(message_3), digest_3)
+
     # Break "random access read/write" CTR
     def test_25(self):
         key = cu.random_bytes()
