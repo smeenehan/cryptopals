@@ -6,6 +6,8 @@ from string import printable
 from test_set2 import encrypt16, decrypt16
 from unittest import TestCase
 
+SECRET_KEY = cu.random_bytes(count=randint(4, 32))
+
 def encrypt27():
     key = cu.random_bytes()
     plain = b"For you to even touch my skill, you gotta put the one killer bee and he ain't gonna kill"
@@ -15,6 +17,18 @@ def decrypt27(cipher, key):
     plain = cu.decrypt_AES_CBC(cipher, key, iv=key)
     if not all([x>31 and x<128 for x in plain]):
         raise ValueError(plain)
+
+def key_MAC(message, algo):
+    key_message = SECRET_KEY+message
+    if algo == 'SHA1':
+        return cu.SHA1(key_message)
+    elif algo == 'MD4':
+        return cu.MD4(key_message)
+    else:
+        raise ValueError('Unknown hash algorithm: '+algo)
+
+def authenticate_MAC(message, MAC, algo):
+    return MAC==key_MAC(message, algo)
 
 class Set4(TestCase):
 
@@ -49,15 +63,34 @@ class Set4(TestCase):
         self.assertTrue(cu.bit_not(orig, 32), not_orig)
 
     def test_sha_1(self):
-        message_1 = b'The quick brown fox jumps over the lazy dog'
-        message_2 = b'The quick brown fox jumps over the lazy cog'
-        message_3 = b''
-        digest_1 = cu.hex_to_bytes('2fd4e1c67a2d28fced849ee1bb76e7391b93eb12')
-        digest_2 = cu.hex_to_bytes('de9f2c7fd25e1b3afad3e85a0bd17d9b100db4b3')
-        digest_3 = cu.hex_to_bytes('da39a3ee5e6b4b0d3255bfef95601890afd80709')
-        self.assertEqual(cu.SHA_1(message_1), digest_1)
-        self.assertEqual(cu.SHA_1(message_2), digest_2)
-        self.assertEqual(cu.SHA_1(message_3), digest_3)
+        messages = [
+        b'The quick brown fox jumps over the lazy dog',
+        b'The quick brown fox jumps over the lazy cog',
+        b'']
+        digests = [
+        cu.hex_to_bytes('2fd4e1c67a2d28fced849ee1bb76e7391b93eb12'),
+        cu.hex_to_bytes('de9f2c7fd25e1b3afad3e85a0bd17d9b100db4b3'),
+        cu.hex_to_bytes('da39a3ee5e6b4b0d3255bfef95601890afd80709')]
+        self.assertTrue(all([cu.SHA1(m)==d for m, d in zip(messages, digests)]))
+
+    def test_md4(self):
+        messages = [
+        b'',
+        b'a',
+        b'abc',
+        b'message digest',
+        b'abcdefghijklmnopqrstuvwxyz',
+        b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+        b'12345678901234567890123456789012345678901234567890123456789012345678901234567890']
+        digests = [
+        cu.hex_to_bytes('31d6cfe0d16ae931b73c59d7e0c089c0'),
+        cu.hex_to_bytes('bde52cb31de33e46245e05fbdbd6fb24'),
+        cu.hex_to_bytes('a448017aaf21d8525fc10ae87aa6729d'),
+        cu.hex_to_bytes('d9130a8164549fe818874806e1c7014b'),
+        cu.hex_to_bytes('d79e1c308aa5bbcdeea8ed63df412da9'),
+        cu.hex_to_bytes('043f8582f241db351ce627e153e7f0e4'),
+        cu.hex_to_bytes('e33b4ddc9c38f2199c3e7b164fcc0536')]
+        self.assertTrue(all([cu.MD4(m)==d for m, d in zip(messages, digests)]))
 
     # Break "random access read/write" CTR
     def test_25(self):
@@ -102,3 +135,40 @@ class Set4(TestCase):
         d_0 = cu.XOR_bytes(p_2, bytes([0]*AES.block_size))
         recovered_key = cu.XOR_bytes(d_0, p_0)
         self.assertTrue(recovered_key, key)
+
+    # Break SHA-1 keyed MAC using length extension
+    def test_29(self):
+        orig_message = b'comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon'
+        orig_MAC = key_MAC(orig_message, 'SHA1')
+
+        new_end = b';admin=true'
+        state = [int.from_bytes(x, 'big') for x in cu.to_chunks(orig_MAC, 4)]
+
+        accepted = []
+        for key_len_guess in range(33):
+            orig_pad = cu.MD_padding(bytes(key_len_guess)+orig_message, 512)
+            new_message = orig_message+orig_pad+new_end
+            new_pad = cu.MD_padding(bytes(key_len_guess)+new_message, 512)
+            guess_MAC = cu.SHA1(new_end+new_pad, init=state, do_pad=False)
+            accepted.append(authenticate_MAC(new_message, guess_MAC, 'SHA1'))
+
+        self.assertTrue(any(accepted))
+
+    # Break MD4 keyed MAC using length extension
+    def test_30(self):
+        orig_message = b'comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon'
+        orig_MAC = key_MAC(orig_message, 'MD4')
+
+        new_end = b';admin=true'
+        state = [int.from_bytes(x, 'little') for x in cu.to_chunks(orig_MAC, 4)]
+
+        accepted = []
+        for key_len_guess in range(33):
+            orig_pad = cu.MD_padding(bytes(key_len_guess)+orig_message, 512, byteorder='little')
+            new_message = orig_message+orig_pad+new_end
+            new_pad = cu.MD_padding(bytes(key_len_guess)+new_message, 512, byteorder='little')
+            guess_MAC = cu.MD4(new_end+new_pad, init=state, do_pad=False)
+            accepted.append(authenticate_MAC(new_message, guess_MAC, 'MD4'))
+
+        self.assertTrue(any(accepted))
+
