@@ -1,7 +1,10 @@
 import base64
 from itertools import cycle
+from random import randint
 
 from Crypto.Cipher import AES
+
+single_bytes = [bytes([x]) for x in range(256)]
 
 def mask_N(num_bits):
     """Integer bit mask for N bits"""

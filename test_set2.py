@@ -1,9 +1,13 @@
-import crypto_utils as cu
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
+#import crypto_utils as cu
 from math import inf
 from random import choice, randint
 from unittest import TestCase
+
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+
+import crypto.utils as cu
+import crypto.block as cb
 
 UNKNOWN_KEY = cu.random_bytes()
 UNKNOWN_PLAIN = cu.base64_to_bytes(
@@ -26,16 +30,16 @@ def encryption_oracle(plain):
     plain = before_bytes+plain+after_bytes
     if encrypt_ECB:
         aes = AES.new(key, AES.MODE_ECB)
-        plain = cu.pad_PKCS7(plain)
+        plain = cb.pad_PKCS7(plain)
         return aes.encrypt(plain)
     else:
         iv = cu.random_bytes()
-        return cu.encrypt_AES_CBC(plain, key, iv=iv)
+        return cb.encrypt_AES_CBC(plain, key, iv=iv)
 
 def black_box(plain):
     aes = AES.new(UNKNOWN_KEY, AES.MODE_ECB)
     plain = UNKNOWN_PREFIX+plain+UNKNOWN_PLAIN
-    plain = cu.pad_PKCS7(plain)
+    plain = cb.pad_PKCS7(plain)
     return aes.encrypt(plain)
 
 def k_v_parser(in_str):
@@ -86,15 +90,15 @@ def encrypt16(plain, alter_invalid=True, CTR=False):
         plain = plain.replace(b'=', b'?')
     plain = PREFIX_TWO+plain+SUFFIX_TWO
     if CTR:
-        return cu.AES_CTR(UNKNOWN_KEY, nonce=UNKNOWN_NONCE).process(plain)
+        return cb.AES_CTR(UNKNOWN_KEY, nonce=UNKNOWN_NONCE).process(plain)
     else:
-        return cu.encrypt_AES_CBC(plain, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
+        return cb.encrypt_AES_CBC(plain, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
 
 def decrypt16(cipher, CTR=False):
     if CTR:
-        plain = cu.AES_CTR(UNKNOWN_KEY, nonce=UNKNOWN_NONCE).process(cipher)
+        plain = cb.AES_CTR(UNKNOWN_KEY, nonce=UNKNOWN_NONCE).process(cipher)
     else:
-        plain = cu.decrypt_AES_CBC(cipher, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
+        plain = cb.decrypt_AES_CBC(cipher, UNKNOWN_KEY_TWO, iv=UNKNOWN_IV)
     tokenized = plain.split(b';')
     for token in tokenized:
         parts = token.split(b'=')
@@ -122,11 +126,11 @@ class Set2(TestCase):
         byte_2 = bytearray(byte_1)
         byte_2[2*block_size:3*block_size] = cu.random_bytes(block_size)
         byte_2[7*block_size:8*block_size] = cu.random_bytes(block_size)
-        diff_blocks = cu.find_diff_blocks(byte_1, byte_2, block_size)
+        diff_blocks = cb.find_diff_blocks(byte_1, byte_2, block_size)
         self.assertEqual(diff_blocks, [2, 7])
 
     def test_find_prefix_len(self):
-        self.assertEqual(cu.find_prefix_len(black_box, AES.block_size),
+        self.assertEqual(cb.find_prefix_len(black_box, AES.block_size),
                          len(UNKNOWN_PREFIX))
 
     def test_black_box_16(self):
@@ -140,8 +144,8 @@ class Set2(TestCase):
     def test_9(self):
         key = b'YELLOW SUBMARINE'
         padded = b'YELLOW SUBMARINE\x04\x04\x04\x04'
-        self.assertEqual(cu.pad_PKCS7(key, block_size=20), padded)
-        self.assertEqual(cu.pad_PKCS7(key, block_size=len(key)),
+        self.assertEqual(cb.pad_PKCS7(key, block_size=20), padded)
+        self.assertEqual(cb.pad_PKCS7(key, block_size=len(key)),
                          key+bytes([len(key)])*len(key))
 
     # implement CBC mode
@@ -149,26 +153,26 @@ class Set2(TestCase):
         key = b'YELLOW SUBMARINE'
         plain_expect = cu.read_utf8('data/Set_1_7_decrypted.txt')
         cipher = cu.read_base64('data/Set_2_10.txt')
-        plain = cu.decrypt_AES_CBC(cipher, key)
+        plain = cb.decrypt_AES_CBC(cipher, key)
         self.assertEqual(plain, plain_expect)
-        plain = cu.unpad_PKCS7(plain)
-        recipher = cu.encrypt_AES_CBC(plain, key)
+        plain = cb.unpad_PKCS7(plain)
+        recipher = cb.encrypt_AES_CBC(plain, key)
         self.assertEqual(recipher, cipher)
 
     # ECB/CBC oracle
     def test_11(self):
         num_shots = 1000
-        ECB_detect = [cu.ECB_oracle(encryption_oracle) for _ in range(num_shots)]
+        ECB_detect = [cb.ECB_oracle(encryption_oracle) for _ in range(num_shots)]
         fraction_ECB = sum(ECB_detect)/len(ECB_detect)
         self.assertAlmostEqual(fraction_ECB, 0.5, delta=0.05)
 
     # byte-at-a-time ECB decryption (Simple and Hard)
     def test_12(self):
-        block_size = cu.get_block_size(black_box)
+        block_size = cb.get_block_size(black_box)
         self.assertEqual(block_size, AES.block_size)
-        self.assertTrue(cu.ECB_oracle(black_box, block_size=block_size))
-        secret = cu.chosen_plaintext_ECB(black_box, block_size=block_size)
-        secret = cu.unpad_PKCS7(secret)
+        self.assertTrue(cb.ECB_oracle(black_box, block_size=block_size))
+        secret = cb.chosen_plaintext_ECB(black_box, block_size=block_size)
+        secret = cb.unpad_PKCS7(secret)
         self.assertEqual(secret, UNKNOWN_PLAIN)
 
     # ECB cut-and-paste
@@ -186,12 +190,12 @@ class Set2(TestCase):
         bad_padding_2 = b'ICE ICE BABY\x01\x02\x03\x04'
         bad_padding_3 = b'YELLOW SUBMARINE'
 
-        self.assertEqual(cu.unpad_PKCS7(good_padding), b'ICE ICE BABY')
-        self.assertEqual(cu.unpad_PKCS7(good_padding_2), b'ICE ICE BABY\x04\x03\x02')
-        self.assertEqual(cu.unpad_PKCS7(good_padding_3), b'YELLOW SUBMARINE')
-        self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding)
-        self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_2)
-        self.assertRaises(ValueError, cu.unpad_PKCS7, bad_padding_3)
+        self.assertEqual(cb.unpad_PKCS7(good_padding), b'ICE ICE BABY')
+        self.assertEqual(cb.unpad_PKCS7(good_padding_2), b'ICE ICE BABY\x04\x03\x02')
+        self.assertEqual(cb.unpad_PKCS7(good_padding_3), b'YELLOW SUBMARINE')
+        self.assertRaises(ValueError, cb.unpad_PKCS7, bad_padding)
+        self.assertRaises(ValueError, cb.unpad_PKCS7, bad_padding_2)
+        self.assertRaises(ValueError, cb.unpad_PKCS7, bad_padding_3)
 
     # CBC bitflipping attack
     def test_16(self):

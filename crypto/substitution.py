@@ -3,7 +3,7 @@ from itertools import combinations
 from math import inf
 from string import ascii_lowercase
 
-from .utils import XOR_bytes, Hamming_dist, transpose_bytes
+from .utils import Hamming_dist, single_bytes, transpose_bytes, XOR_bytes
 
 """Substitution ciphers (e.g., XOR, Vigenere, etc.)"""
 
@@ -16,7 +16,6 @@ letter_freqs = {
 'y':0.01974, 'z':0.00074
 }
 
-single_bytes = [bytes([x]) for x in range(256)]
 
 def decrypt_single_byte_XOR(cipher):
     """Brute-force decrypt English (UTF-8) text encrypted with single-byte XOR.
