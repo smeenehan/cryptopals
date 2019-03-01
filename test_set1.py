@@ -1,6 +1,10 @@
-import crypto_utils as cu
-from Crypto.Cipher import AES
 from unittest import TestCase
+
+from Crypto.Cipher import AES
+
+import crypto.utils as cu
+import crypto.substitution as cs
+import crypto.block as cb
 
 class Set1(TestCase):
 
@@ -40,7 +44,7 @@ class Set1(TestCase):
         cipher = cu.hex_to_bytes('1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736')
         plain_text = "Cooking MC's like a pound of bacon"
         key_byte = 88
-        _, plain, key = cu.decrypt_single_byte_XOR(cipher)
+        _, plain, key = cs.decrypt_single_byte_XOR(cipher)
         self.assertEqual(plain.decode('utf-8'), plain_text)
         self.assertEqual(key[0], key_byte)
 
@@ -51,7 +55,7 @@ class Set1(TestCase):
         with open('data/Set_1_4.txt', 'r') as f:
             for line in f:
                 cipher = cu.hex_to_bytes(line)
-                prob, plain, _ = cu.decrypt_single_byte_XOR(cipher)
+                prob, plain, _ = cs.decrypt_single_byte_XOR(cipher)
                 if prob > best_prob:
                     best_prob = prob
                     best_plain = plain.decode('utf-8')
@@ -74,7 +78,7 @@ class Set1(TestCase):
         key_expect = b'Terminator X: Bring the noise'
         plain_expect = cu.read_utf8('data/Set_1_6_decrypted.txt')
         cipher = cu.read_base64('data/Set_1_6.txt')
-        (plain, key) = cu.decrypt_repeating_XOR(cipher)
+        (plain, key) = cs.decrypt_repeating_XOR(cipher)
 
         self.assertEqual(key, key_expect)
         self.assertEqual(plain, plain_expect)
@@ -93,6 +97,6 @@ class Set1(TestCase):
         ECB_ciphers = []
         with open('data/Set_1_8.txt', 'r') as f:
             for cipher in f:
-                if cu.detect_ECB(cipher):
+                if cb.detect_ECB(cipher):
                     ECB_ciphers.append(cipher)
         self.assertEqual(len(ECB_ciphers), 1)
