@@ -2,7 +2,7 @@ from math import inf
 
 from Crypto.Cipher import AES
 
-from .utils import random_bytes, single_bytes, XOR_bytes
+from .utils import random_bytes, single_bytes, to_chunks, XOR_bytes
 
 """Block ciphers, including stream ciphers implemented using CTR mode"""
 
@@ -190,43 +190,57 @@ def decrypt_CBC_padding_oracle(cipher, oracle, block_size=AES.block_size):
     will take a ciphertext as input and return True or False depending on whether
     the decrypted plaintext has valid PKCS#7 padding.
 
-    For simplicity, I'm assuming the IV is prepended to the ciphertext, though this
-    is not strictly necessary. We just need to know what it is."""
-    known_blocks = []
-    num_blocks = len(cipher)//block_size
+    We assume for simplicity that we know the IV, and that it is appended to the
+    ciphertext (first block of cipher). This is not strictly necessary if we are
+    able to obtain two ciphertexts encrypted with the same IV."""
 
-    def prepare_attack_block(mod_cipher, known):
-        """Figure out which byte we need to twiddle in the ciphertext, and prepare
-        the rest of the second-to-last block so we'll get the right padding."""
-        num_known = len(known)
-        pad_byte = num_known+1
-        to_twiddle = -block_size-num_known-1
-        if num_known>0:
-            known_cipher = mod_cipher[to_twiddle+1:-block_size]
-            alter = XOR_bytes(XOR_bytes(known_cipher, known),
-                              bytes([pad_byte])*num_known)
-            mod_cipher[to_twiddle+1:-block_size] = alter
-        return to_twiddle, pad_byte
-
-    def decrypt_next_byte(mod_cipher, known):
-        """Given the cipher text, up to block N, and existing known plaintext
-        from the end of block N, decrypt the next byte starting from the end, and
-        return the new known plain (one byte longer)"""
-        byte_to_twiddle, pad_byte = prepare_attack_block(mod_cipher, known)
-        orig_cipher = mod_cipher[byte_to_twiddle]
-        new_cipher = 0
-        for x in range(256):
-            mod_cipher[byte_to_twiddle] = x
-            if oracle(mod_cipher) == True:
-                new_cipher = x
+    def decrypt_last_bytes(block):
+        """decrypt at least one byte at the end of a block, N if we're lucky"""
+        rand_block = random_bytes(count=block_size)
+        attack = bytearray(rand_block+block)
+        for idx in range(256):
+            """Find a random cipher block resulting in valid padding"""
+            attack[block_size-1] = rand_block[-1]^idx
+            if oracle(attack) == True:
                 break;
-        new_known = (orig_cipher^new_cipher)^pad_byte
+
+        for idx in range(block_size-1):
+            """Check for a valid padding not equal to \x01"""
+            attack[idx] = rand_block[idx]^1
+            good_pad = oracle(attack)
+            attack[idx] = rand_block[idx]
+            if not good_pad:
+                n = block_size-idx
+                return XOR_bytes(attack[idx:block_size], bytes([n]*n))
+        return bytes([attack[block_size-1]^1])
+
+    def decrypt_prev_byte(block, known):
+        """decrypt previous byte of a block, given some known bytes at the end"""
+        num_known = len(known)
+        num_left = block_size-num_known
+        pad_value = num_known+1
+        rand_end = XOR_bytes(known, bytes([pad_value]*num_known))
+        rand_block = random_bytes(count=num_left)+rand_end
+        new_known = 0
+        for idx in range(256):
+            attack = bytearray(rand_block+block)
+            attack[num_left-1] = rand_block[num_left-1]^idx
+            if oracle(attack) == True:
+                new_known = attack[num_left-1]^pad_value
+                break;
         return bytes([new_known])+known
 
-    for idx in range(num_blocks-1):
-        known = bytes([])
-        for jdx in range(block_size):
-            mod_cipher = bytearray(cipher[:len(cipher)-idx*block_size])
-            known = decrypt_next_byte(mod_cipher, known)
+    cipher_blocks = to_chunks(cipher, block_size)
+    known_blocks = []
+    for block in cipher_blocks[1:]:
+        known = decrypt_last_bytes(block)
+        while len(known)<block_size:
+            known = decrypt_prev_byte(block, known)
         known_blocks.append(known)
-    return b''.join([x for x in reversed(known_blocks)])
+
+    """Up until this point we have the output of the block cipher, but in CBC mode
+    this must be XOR-ed with the cipher text blocks to get the true plaintext"""
+    plain_blocks = []
+    for c, k in zip(cipher_blocks[:-1], known_blocks):
+        plain_blocks.append(XOR_bytes(c, k))
+    return b''.join(plain_blocks)
