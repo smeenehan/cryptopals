@@ -1,29 +1,33 @@
-import crypto_utils as cu
-from Crypto.Cipher import AES
 from datetime import datetime
 from random import choice, randint
 from string import printable
-from test_set2 import encrypt16, decrypt16
 from unittest import TestCase
+
+from Crypto.Cipher import AES
+
+import crypto.block as cb
+import crypto.hash as ch
+import crypto.utils as cu
+from test_set2 import encrypt16, decrypt16
 
 SECRET_KEY = cu.random_bytes(count=randint(4, 32))
 
 def encrypt27():
     key = cu.random_bytes()
     plain = b"For you to even touch my skill, you gotta put the one killer bee and he ain't gonna kill"
-    return cu.encrypt_AES_CBC(plain, key, iv=key), key
+    return cb.encrypt_AES_CBC(plain, key, iv=key), key
 
 def decrypt27(cipher, key):
-    plain = cu.decrypt_AES_CBC(cipher, key, iv=key)
+    plain = cb.decrypt_AES_CBC(cipher, key, iv=key)
     if not all([x>31 and x<128 for x in plain]):
         raise ValueError(plain)
 
 def key_MAC(message, algo):
     key_message = SECRET_KEY+message
     if algo == 'SHA1':
-        return cu.SHA1(key_message)
+        return ch.SHA1(key_message)
     elif algo == 'MD4':
-        return cu.MD4(key_message)
+        return ch.MD4(key_message)
     else:
         raise ValueError('Unknown hash algorithm: '+algo)
 
@@ -36,7 +40,7 @@ class Set4(TestCase):
         plain = cu.random_bytes(count=10*AES.block_size)
         key = cu.random_bytes()
         nonce = cu.random_bytes(count=AES.block_size//2)
-        ctr = cu.AES_CTR(key, nonce=nonce)
+        ctr = cb.AES_CTR(key, nonce=nonce)
         cipher = ctr.process(plain)
 
         new_plain_block = cu.random_bytes(count=2*AES.block_size+5)
@@ -71,7 +75,7 @@ class Set4(TestCase):
         cu.hex_to_bytes('2fd4e1c67a2d28fced849ee1bb76e7391b93eb12'),
         cu.hex_to_bytes('de9f2c7fd25e1b3afad3e85a0bd17d9b100db4b3'),
         cu.hex_to_bytes('da39a3ee5e6b4b0d3255bfef95601890afd80709')]
-        self.assertTrue(all([cu.SHA1(m)==d for m, d in zip(messages, digests)]))
+        self.assertTrue(all([ch.SHA1(m)==d for m, d in zip(messages, digests)]))
 
     def test_md4(self):
         messages = [
@@ -90,14 +94,14 @@ class Set4(TestCase):
         cu.hex_to_bytes('d79e1c308aa5bbcdeea8ed63df412da9'),
         cu.hex_to_bytes('043f8582f241db351ce627e153e7f0e4'),
         cu.hex_to_bytes('e33b4ddc9c38f2199c3e7b164fcc0536')]
-        self.assertTrue(all([cu.MD4(m)==d for m, d in zip(messages, digests)]))
+        self.assertTrue(all([ch.MD4(m)==d for m, d in zip(messages, digests)]))
 
     # Break "random access read/write" CTR
     def test_25(self):
         key = cu.random_bytes()
         nonce = cu.random_bytes(count=AES.block_size//2)
         plain = cu.read_base64('data/Set_1_7.txt')
-        ctr = cu.AES_CTR(key, nonce=nonce)
+        ctr = cb.AES_CTR(key, nonce=nonce)
         cipher = ctr.process(plain)
 
         cipher_len = len(cipher)
@@ -146,10 +150,10 @@ class Set4(TestCase):
 
         accepted = []
         for key_len_guess in range(33):
-            orig_pad = cu.MD_padding(bytes(key_len_guess)+orig_message, 512)
+            orig_pad = ch.MD_padding(bytes(key_len_guess)+orig_message, 512)
             new_message = orig_message+orig_pad+new_end
-            new_pad = cu.MD_padding(bytes(key_len_guess)+new_message, 512)
-            guess_MAC = cu.SHA1(new_end+new_pad, init=state, do_pad=False)
+            new_pad = ch.MD_padding(bytes(key_len_guess)+new_message, 512)
+            guess_MAC = ch.SHA1(new_end+new_pad, init=state, do_pad=False)
             accepted.append(authenticate_MAC(new_message, guess_MAC, 'SHA1'))
 
         self.assertTrue(any(accepted))
@@ -164,10 +168,10 @@ class Set4(TestCase):
 
         accepted = []
         for key_len_guess in range(33):
-            orig_pad = cu.MD_padding(bytes(key_len_guess)+orig_message, 512, byteorder='little')
+            orig_pad = ch.MD_padding(bytes(key_len_guess)+orig_message, 512, byteorder='little')
             new_message = orig_message+orig_pad+new_end
-            new_pad = cu.MD_padding(bytes(key_len_guess)+new_message, 512, byteorder='little')
-            guess_MAC = cu.MD4(new_end+new_pad, init=state, do_pad=False)
+            new_pad = ch.MD_padding(bytes(key_len_guess)+new_message, 512, byteorder='little')
+            guess_MAC = ch.MD4(new_end+new_pad, init=state, do_pad=False)
             accepted.append(authenticate_MAC(new_message, guess_MAC, 'MD4'))
 
         self.assertTrue(any(accepted))
