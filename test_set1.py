@@ -2,9 +2,9 @@ from unittest import TestCase
 
 from Crypto.Cipher import AES
 
-import crypto.utils as cu
-import crypto.substitution as cs
 import crypto.block as cb
+import crypto.substitution as cs
+import crypto.utils as cu
 
 class Set1(TestCase):
 

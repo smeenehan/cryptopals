@@ -69,7 +69,7 @@ def decrypt_repeating_XOR(cipher, max_key_size=40):
         key (bytes-like): Decryption key
     """
     key_size = _guess_repeating_XOR_key_size(cipher, max_key_size)
-    key = _get_repeating_XOR_key(cipher, key_size)
+    key = get_repeating_XOR_key(cipher, key_size)
     plain = XOR_bytes(cipher, key)
     return (plain, key)
 
@@ -86,7 +86,7 @@ def _guess_repeating_XOR_key_size(cipher, max_key_size, num_to_avg=4):
             min_dist, key_size = avg_dist, size
     return key_size
 
-def _get_repeating_XOR_key(cipher, key_size):
+def get_repeating_XOR_key(cipher, key_size):
     key = []
     for block in transpose_bytes(cipher, key_size):
         key_byte = decrypt_single_byte_XOR(block)[2][0]

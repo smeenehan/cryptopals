@@ -6,8 +6,8 @@ from unittest import TestCase
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 
-import crypto.utils as cu
 import crypto.block as cb
+import crypto.utils as cu
 
 UNKNOWN_KEY = cu.random_bytes()
 UNKNOWN_PLAIN = cu.base64_to_bytes(

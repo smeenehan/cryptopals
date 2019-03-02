@@ -184,3 +184,49 @@ def chosen_plaintext_ECB(encrypt_func, block_size=AES.block_size):
         secret.append(plain_dict[cipher_frag])
         remaining = len(cipher)-len(in_bytes)-len(secret)-pre_len
     return bytes(secret)
+
+def decrypt_CBC_padding_oracle(cipher, oracle, block_size=AES.block_size):
+    """Decrypt a cipher text, encrypted with CBC, given an oracle function that
+    will take a ciphertext as input and return True or False depending on whether
+    the decrypted plaintext has valid PKCS#7 padding.
+
+    For simplicity, I'm assuming the IV is prepended to the ciphertext, though this
+    is not strictly necessary. We just need to know what it is."""
+    known_blocks = []
+    num_blocks = len(cipher)//block_size
+
+    def prepare_attack_block(mod_cipher, known):
+        """Figure out which byte we need to twiddle in the ciphertext, and prepare
+        the rest of the second-to-last block so we'll get the right padding."""
+        num_known = len(known)
+        pad_byte = num_known+1
+        to_twiddle = -block_size-num_known-1
+        if num_known>0:
+            known_cipher = mod_cipher[to_twiddle+1:-block_size]
+            alter = XOR_bytes(XOR_bytes(known_cipher, known),
+                              bytes([pad_byte])*num_known)
+            mod_cipher[to_twiddle+1:-block_size] = alter
+        return to_twiddle, pad_byte
+
+    def decrypt_next_byte(mod_cipher, known):
+        """Given the cipher text, up to block N, and existing known plaintext
+        from the end of block N, decrypt the next byte starting from the end, and
+        return the new known plain (one byte longer)"""
+        byte_to_twiddle, pad_byte = prepare_attack_block(mod_cipher, known)
+        orig_cipher = mod_cipher[byte_to_twiddle]
+        new_cipher = 0
+        for x in range(256):
+            mod_cipher[byte_to_twiddle] = x
+            if oracle(mod_cipher) == True:
+                new_cipher = x
+                break;
+        new_known = (orig_cipher^new_cipher)^pad_byte
+        return bytes([new_known])+known
+
+    for idx in range(num_blocks-1):
+        known = bytes([])
+        for jdx in range(block_size):
+            mod_cipher = bytearray(cipher[:len(cipher)-idx*block_size])
+            known = decrypt_next_byte(mod_cipher, known)
+        known_blocks.append(known)
+    return b''.join([x for x in reversed(known_blocks)])
