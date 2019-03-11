@@ -1,6 +1,6 @@
 from itertools import cycle
 
-from .utils import bit_not, to_chunks, rot_left
+from .utils import bit_not, to_chunks, rot_left, XOR_bytes
 
 """Hashing algorithms (e.g., SHA-1, MD4)"""
 
@@ -143,3 +143,14 @@ def _MD4_round_3(words, buff):
         adx, bdx, cdx, ddx = -idx%4, -(idx-1)%4, -(idx-2)%4, -(idx-3)%4
         buff[adx] = r3(buff[adx], buff[bdx], buff[cdx], buff[ddx], w, s)
     return buff
+
+def HMAC(key, message, hash_func=SHA1):
+    block_size = 64
+    if len(key)>block_size:
+        key = hash_func(key)
+    diff = block_size-len(key)
+    if diff>0:
+        key = key+bytes([0]*diff)
+    ipad = XOR_bytes(key, bytes([0x36]*block_size))
+    opad = XOR_bytes(key, bytes([0x5c]*block_size))
+    return hash_func(opad+hash_func(ipad+message))

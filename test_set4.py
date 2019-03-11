@@ -1,6 +1,8 @@
 from datetime import datetime
 from random import choice, randint
+from statistics import median
 from string import printable
+from time import perf_counter
 from unittest import TestCase
 
 from Crypto.Cipher import AES
@@ -8,6 +10,7 @@ from Crypto.Cipher import AES
 import crypto.block as cb
 import crypto.hash as ch
 import crypto.utils as cu
+import set4_server as server
 from test_set2 import encrypt16, decrypt16
 
 SECRET_KEY = cu.random_bytes(count=randint(4, 32))
@@ -96,6 +99,15 @@ class Set4(TestCase):
         cu.hex_to_bytes('e33b4ddc9c38f2199c3e7b164fcc0536')]
         self.assertTrue(all([ch.MD4(m)==d for m, d in zip(messages, digests)]))
 
+    def test_hmac(self):
+        keys = [b'', b'key']
+        messages = [b'', b'The quick brown fox jumps over the lazy dog']
+        digests = [
+        cu.hex_to_bytes('fbdb1d1b18aa6c08324b7d64b71fb76370690e1d'),
+        cu.hex_to_bytes('de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9')]
+        self.assertTrue(
+            all([ch.HMAC(k, m)==d for k, m, d in zip(keys, messages, digests)]))
+
     # Break "random access read/write" CTR
     def test_25(self):
         key = cu.random_bytes()
@@ -175,4 +187,53 @@ class Set4(TestCase):
             accepted.append(authenticate_MAC(new_message, guess_MAC, 'MD4'))
 
         self.assertTrue(any(accepted))
+
+class Set4Server(TestCase):
+
+    def setUp(self):
+        server.app.testing = True
+        self.client = server.app.test_client()
+        self.secret = server.SECRET_KEY
+
+    def test_server(self):
+        response = self.client.get('/')
+        self.assertEqual(response.data, b'OK')
+        self.assertEqual(response.status_code, 200)
+
+    def test_hmac(self):
+        file = 'foo'
+        sig = cu.bytes_to_hex(ch.HMAC(self.secret, file.encode()))
+        bad_sig = cu.bytes_to_hex(cu.random_bytes(count=20))
+        good_get = f'/test?file={file}&signature={sig}'
+        bad_get = f'/test?file={file}&signature={bad_sig}'
+        response = self.client.get(good_get)
+        self.assertEqual(response.status_code, 200)
+        response = self.client.get(bad_get)
+        self.assertEqual(response.status_code, 500)
+
+    def test_31_32(self):
+
+        def get_next_byte(known, file, rounds=10):
+            suffix_len = server.HMAC_LEN-len(known)
+            times = [[] for _ in range(256)]
+            for idx in range(256):
+                suffix = bytes([idx]+[0]*(suffix_len-1))
+                sig = cu.bytes_to_hex(known+suffix)
+                for _ in range(rounds):
+                    init_time = perf_counter()
+                    response = self.client.get(f'/test?file={file}&signature={sig}')
+                    diff_time = perf_counter()-init_time
+                    times[idx].append(diff_time)
+            median_times = [median(x) for x in times]
+            byte = max(range(256), key=lambda x: median_times[x])
+            return bytes([byte])
+
+        file = 'foo'
+        known = b''
+        while len(known)<server.HMAC_LEN:
+            known += get_next_byte(known, file)
+        known = cu.bytes_to_hex(known)
+        response = self.client.get(f'/test?file={file}&signature={known}')
+        self.assertEqual(response.status_code, 200)
+
 
