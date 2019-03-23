@@ -7,6 +7,10 @@ from Crypto.Cipher import AES
 
 single_bytes = [bytes([x]) for x in range(256)]
 
+def int_to_bytes(i):
+    """Return an integer as a big-endian byte-like"""
+    return i.to_bytes((i.bit_length() + 7) // 8, 'big')
+
 def mask_N(num_bits):
     """Integer bit mask for N bits"""
     return int('1'*num_bits, 2)
