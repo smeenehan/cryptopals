@@ -1,4 +1,5 @@
 from hashlib import sha1
+from random import choice
 from unittest import TestCase
 
 from Crypto.Cipher import AES
@@ -7,17 +8,50 @@ import crypto.hash as ch
 import crypto.key_exchange as ck
 import crypto.utils as cu
 
+class AliceClient(object):
+    """Mock up client that will do encrypted communication with a server
+    using Diffie-Hellman key-exchange"""
+
+    def __init__(self):
+        self.p, self.g = ck.DH_P, ck.DH_G
+        self.private, self.public = 0, 0
+        self.key = bytes([])
+        self.server = None
+
+    def connect_to_server(self, server):
+        """Perform key-exchange with a server to generate a shared-secret"""
+        self.private, self.public = ck.gen_DH_keys(p=self.p, g=self.g)
+        public_server = server.key_exchange(self.p, self.g, self.public)
+        secret = ck.gen_DH_secret(self.private, public_server, p=self.p)
+        self.key = cbc_keygen(secret)
+        self.server = server
+        return True
+
+    def check_connection(self):
+        """Encrypt a random message, send to server, and check that the
+        response is a valid encrypted echo of that message."""
+        iv = cu.random_bytes()
+        aes = AES.new(self.key, AES.MODE_CBC, iv)
+        plain = cu.random_bytes(count=256)
+        cipher = aes.encrypt(plain)
+        cipher_server, iv_server = self.server.echo(cipher, iv)
+        aes = AES.new(self.key, AES.MODE_CBC, iv_server)
+        plain_server = aes.decrypt(cipher_server)
+        return plain==plain_server, plain
+
 class BobServer(object):
     """Mock up a server where Bob can do Diffie-Hellman key-exchange, and
     use this to echo back encrypted messages using the shared secret."""
 
     def __init__(self):
+        self.p, self.g = ck.DH_P, ck.DH_G
         self.private, self.public = 0, 0
         self.secret = bytes([])
 
     def key_exchange(self, p, g, public):
-        self.private, self.public = ck.gen_DH_keys()
-        self.secret = ck.gen_DH_secret(self.private, public)
+        self.p, self.g = p, g
+        self.private, self.public = ck.gen_DH_keys(p=self.p, g=self.g)
+        self.secret = ck.gen_DH_secret(self.private, public, p=self.p)
         return self.public
 
     def echo(self, cipher, iv):
@@ -31,20 +65,31 @@ class BobServer(object):
 
 class EveServer(object):
     """Mock up a server where Eve acts as a MITM between Alice and Bob
-    (the latter using the BobServer object).
+    (the latter using the BobServer object)."""
 
-    We will use parameter injection to break Diffie-Hellman by ensuring
-    that the secret is always 0 (empty byte-string)"""
-
-    def __init__(self, server):
+    def __init__(self, server, mod_g=False):
         self.server = server
         self.key = cbc_keygen(bytes([]))
         self.last_client_msg = bytes([])
         self.last_server_mas = bytes([])
+        self.mod_g = mod_g
 
     def key_exchange(self, p, g, public):
-        self.server.key_exchange(p, g, p)
-        return p
+        if self.mod_g is False:
+            """Parameter-injection. Make both parties think the public-key
+            is p, yielding a secret of 0 (empty bytes)"""
+            self.server.key_exchange(p, g, p)
+            return p
+
+        """Malicious g-value, but same idea. Control the estimated public-key
+        so that the secret is known a priori"""
+        new_g = choice([1, p, p-1])
+        if new_g == p:
+            fake_public, secret = 0, 0
+        else:
+            fake_public, secret = 1, 1
+        self.key = cbc_keygen(cu.int_to_bytes(secret))
+        return self.server.key_exchange(p, new_g, fake_public)
 
     def echo(self, cipher, iv):
         """Pass through client and server messages, while decrypting and
@@ -66,28 +111,11 @@ def cbc_keygen(secret):
 class Set5(TestCase):
 
     def test_DH_echo(self):
+        client = AliceClient()
         server = BobServer()
-
-        """Alice generates DH parameters, sends to Bob, generates shared
-        secret according to Diffie-Hellman"""
-        p, g = ck.DH_P, ck.DH_G
-        private, public = ck.gen_DH_keys()
-        public_server = server.key_exchange(p, g, public)
-        secret = ck.gen_DH_secret(private, public_server)
-
-        """Use secret to encrypt a random message, send to Bob, and get
-        his ciphertext. Verify that it encrypts the same plaintext."""
-        iv = cu.random_bytes()
-        key = cbc_keygen(secret)
-        aes = AES.new(key, AES.MODE_CBC, iv)
-        plain = cu.random_bytes(count=256)
-        cipher = aes.encrypt(plain)
-        cipher_server, iv_server = server.echo(cipher, iv)
-
-        aes = AES.new(key, AES.MODE_CBC, iv_server)
-        plain_server = aes.decrypt(cipher_server)
-        self.assertEqual(plain, plain_server)
-
+        client.connect_to_server(server)
+        good_cnxn, _ = client.check_connection()
+        self.assertTrue(good_cnxn)
 
     def test_33(self):
         private_1, public_1 = ck.gen_DH_keys()
@@ -98,30 +126,28 @@ class Set5(TestCase):
         self.assertEqual(shared_1, shared_2)
 
     def test_34(self):
+        client = AliceClient()
         server = BobServer()
         mitm = EveServer(server)
+        client.connect_to_server(mitm)
+        good_cnxn, plain = client.check_connection()
+        self.assertTrue(good_cnxn)
 
-        """Alice generates DH parameters, sends to server (Eve), generates
-        shared secret according to Diffie-Hellman"""
-        p, g = ck.DH_P, ck.DH_G
-        private, public = ck.gen_DH_keys()
-        public_Bob = mitm.key_exchange(p, g, public)
-        secret = ck.gen_DH_secret(private, public_Bob)
-
-        """Use secret to encrypt a random message, send to server, and get
-        ciphertext. Verify that it encrypts the same plaintext."""
-        iv = cu.random_bytes()
-        key = cbc_keygen(secret)
-        aes = AES.new(key, AES.MODE_CBC, iv)
-        plain = cu.random_bytes(count=256)
-        cipher = aes.encrypt(plain)
-        cipher_server, iv_server = mitm.echo(cipher, iv)
-
-        aes = AES.new(key, AES.MODE_CBC, iv_server)
-        plain_server = aes.decrypt(cipher_server)
-        self.assertEqual(plain, plain_server)
-
-        """Now, check that Eve was able to decrypt Alice and Bob's messages"""
+        """Check that Eve was able to decrypt Alice and Bob's messages"""
         self.assertEqual(plain, mitm.last_client_msg)
         self.assertEqual(plain, mitm.last_server_msg)
+
+    def test_35(self):
+        client = AliceClient()
+        server = BobServer()
+        mitm = EveServer(server, mod_g=True)
+        client.connect_to_server(mitm)
+        good_cnxn, plain = client.check_connection()
+        self.assertTrue(good_cnxn)
+
+        """Check that Eve was able to decrypt Alice and Bob's messages"""
+        self.assertEqual(plain, mitm.last_client_msg)
+        self.assertEqual(plain, mitm.last_server_msg)
+
+
 
