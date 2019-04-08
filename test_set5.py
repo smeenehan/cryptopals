@@ -58,10 +58,10 @@ class Set5SRP(TestCase):
         self.client = SRPClient(email, password, g=g, N=N, k=k)
         self.server = SRPServer(g, N, k)
         self.server.register_user(email, password)
-        self.client.server = self.server
+        self.mitm = SRPMalicious(self.server)
 
     def test_36(self):
-        self.client.login()
+        self.client.login(self.server)
         self.assertTrue(self.client.validate())
 
     def test_37(self):
@@ -69,7 +69,7 @@ class Set5SRP(TestCase):
         to modexp and hashing, passing any multiple of N (including 0!) will
         result in key == SHA256(0). Note that we don't need to know g, N, k,
         the password. NOTHING. Just pass (email, 0) and SHA256(0) is your key!!!"""
-        self.client.login(DH_keys=(0, 0))
+        self.client.login(self.server, DH_keys=(0, 0))
         m = sha256()
         m.update(cu.int_to_bytes(0))
         self.client.session_key = m.digest()
@@ -77,8 +77,16 @@ class Set5SRP(TestCase):
 
     def test_SRP_simple(self):
         self.server.simple = True
-        self.client.login()
+        self.client.login(self.server)
         self.assertTrue(self.client.validate())
+
+    def test_38(self):
+        self.client.password = choice(WEAK_PASSWORDS)
+        self.client.login(self.mitm)
+        self.assertTrue(self.client.validate())
+        email = self.client.email
+        self.assertTrue(self.mitm.crack(email))
+        self.assertEqual(self.mitm.passwords[email], self.client.password)
 
 class Alice(object):
     """Mock up client that will do encrypted communication with a server
@@ -189,14 +197,16 @@ class SRPClient(object):
         self.session_key = None
         self.salt = None
 
-    def login(self, DH_keys=None):
+    def login(self, server, DH_keys=None):
         if DH_keys is None:
             private, public = ck.gen_DH_keys(p=self.N, g=self.g)
         else:
             private, public = DH_keys
 
-        response = self.server.login(self.email, public)
-        if self.server.simple:
+        simple = server.simple
+        response = server.login(self.email, public)
+        self.server = server
+        if simple:
             self.salt, server_public, scramble = response
         else:
             self.salt, server_public = response
@@ -206,7 +216,7 @@ class SRPClient(object):
         m.update(self.salt+bytes(self.password, 'utf-8'))
         xH = m.digest()
         x = int.from_bytes(xH, byteorder='big')
-        if self.server.simple:
+        if simple:
             S = ck.modexp(server_public, private+scramble*x, self.N)
         else:
             S = ck.modexp(self.g, x, self.N)
@@ -284,6 +294,62 @@ class SRPServer(object):
             return hmac.compare_digest(validation, expected)
         except KeyError:
             return False
+
+class SRPMalicious(object):
+    """MITM for SRP, which performs a dictionary attack on the user's
+    password once they attempt to validate."""
+
+    def __init__(self, server):
+        self.login_info = dict()
+        self.validations = dict()
+        self.passwords = dict()
+        self.simple = True
+        self.server = server
+        self.g = server.g
+        self.N = server.N
+
+    def login(self, email, client_public):
+        salt = cu.random_bytes(8)
+
+        """This is the most important step! Under the simplified SRP
+        protocol, the one bit of info (aside from the password) we don't
+        know is the user's private key. But, it enters in form B**a % N.
+        So, if we set B == g, this turns into the user's public key, which
+        we do know."""
+        public = self.g
+        scramble = randbelow(2**128)
+        self.login_info[email] = (client_public, salt, scramble)
+        return salt, public, scramble
+
+    def validate(self, email, validation):
+        self.validations[email] = validation
+        return True
+
+    def crack(self, email):
+        public, salt, scramble = self.login_info[email]
+        validation = self.validations[email]
+        for pw in WEAK_PASSWORDS:
+            m = sha256()
+            m.update(salt+bytes(pw, 'utf-8'))
+            xH = m.digest()
+            x = int.from_bytes(xH, byteorder='big')
+            S = ck.modexp(self.g, scramble*x, self.N)
+            S = public*S % self.N
+            m = sha256()
+            m.update(cu.int_to_bytes(S))
+            key_guess = m.digest()
+            expected = hmac.new(key_guess, salt, sha256).digest()
+            if hmac.compare_digest(validation, expected):
+                self.passwords[email] = pw
+                return True
+        return False
+
+WEAK_PASSWORDS = [
+'123456', 'password', '123456789', '12345678', '12345', '111111', '1234567',
+'sunshine', 'qwerty', 'iloveyou', 'princess', 'admin', 'welcome', '666666',
+'abc123', 'football', '123123', 'monkey', '654321', '!@#$%^&*', 'charlie',
+'aa123456', 'donald', 'password1', 'qwerty123'
+]
 
 def srp_scrambler(client_public, server_public):
     """compute the scrambling integer used in the SRP protocal, using two
