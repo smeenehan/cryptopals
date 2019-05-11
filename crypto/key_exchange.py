@@ -1,6 +1,7 @@
 from secrets import randbelow
 
 from Crypto.Util.number import getStrongPrime
+import numpy as np
 
 from crypto.utils import int_to_bytes
 
@@ -66,3 +67,48 @@ def gen_RSA_keys():
 
 def cipher_RSA(data, key):
     return modexp(data, key[0], key[1])
+
+def RSA_broadcast_attack(public_keys, ciphertexts):
+    """Use Håstad's broadcast attack to break RSA using small public-key
+    exponents (e.g., e = 3). List public_keys and ciphertexts are the
+    public-key tuples for RSA and corresponding encrypted plaintexts,
+    assuming that the ciphertexts all correspond to the same plaintext.
+    For this attack to work, N >= e encryptions must be given"""
+    e_vals = set([p[0] for p in public_keys])
+    if len(e_vals) != 1:
+        raise ValueError('Public-key exponent must match for all ciphers')
+
+    e = public_keys[0][0]
+    if len(public_keys) < e or len(ciphertexts) < e:
+        raise ValueError('Broadcast attack requires at least e ciphertexts')
+
+    n_vals = [p[1] for p in public_keys[:e]]
+    N = np.product(n_vals)
+    residue = 0
+    for c, n in zip(ciphertexts[:e], n_vals):
+        m = N // n
+        residue += c*m*invmod(m, n)
+    residue = residue % N
+    return invpow(residue, e)
+
+def invpow(x, n):
+    """Find the n-th root of an integer x using binary search. This should
+    work even if the integer is too large to convert to float (i.e., if
+    pow(x, 1/n) fails"""
+
+    """Find brackets [N, 2*N] which contain the root"""
+    high = 1
+    while high**n <= x:
+        high *= 2
+    low = high // 2
+
+    while low < high:
+        mid = (low + high) // 2
+        mid_pow = mid**n
+        if low < mid and mid_pow < x:
+            low = mid
+        elif high > mid and mid_pow > x:
+            high = mid
+        else:
+            return mid
+    return mid + 1

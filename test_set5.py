@@ -105,6 +105,25 @@ class Set5RSA(TestCase):
         decipher = ck.cipher_RSA(cipher, private)
         self.assertEqual(plain, decipher)
 
+    def test_invpow(self):
+        x, n = randbelow(2**16), 3
+        y = x**n
+        self.assertEqual(ck.invpow(y, n), x)
+
+    def test_40(self):
+        plain = randbelow(2**128)
+
+        public_keys = []
+        ciphertexts = []
+        for _ in range(3):
+            public, _ = ck.gen_RSA_keys()
+            cipher = ck.cipher_RSA(plain, public)
+            public_keys.append(public)
+            ciphertexts.append(cipher)
+
+        decipher = ck.RSA_broadcast_attack(public_keys, ciphertexts)
+        self.assertEqual(plain, decipher)
+
 class Alice(object):
     """Mock up client that will do encrypted communication with a server
     using Diffie-Hellman key-exchange"""
