@@ -88,6 +88,23 @@ class Set5SRP(TestCase):
         self.assertTrue(self.mitm.crack(email))
         self.assertEqual(self.mitm.passwords[email], self.client.password)
 
+class Set5RSA(TestCase):
+
+    def test_egcd(self):
+        bezout, gcd = ck.egcd(240, 46)
+        self.assertEqual(bezout, (-9, 47))
+        self.assertEqual(gcd, 2)
+
+    def test_invmod(self):
+        self.assertEqual(ck.invmod(17, 3120), 2753)
+
+    def test_39(self):
+        public, private = ck.gen_RSA_keys()
+        plain = 42
+        cipher = ck.cipher_RSA(plain, public)
+        decipher = ck.cipher_RSA(cipher, private)
+        self.assertEqual(plain, decipher)
+
 class Alice(object):
     """Mock up client that will do encrypted communication with a server
     using Diffie-Hellman key-exchange"""

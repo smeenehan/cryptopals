@@ -1,5 +1,7 @@
 from secrets import randbelow
 
+from Crypto.Util.number import getStrongPrime
+
 from crypto.utils import int_to_bytes
 
 """Public-private key exchange (e.g., Diffie-Hellman, RSA)"""
@@ -29,3 +31,38 @@ def modexp(g, u, p):
         u >>= 1
         g = (g*g) %p
     return s
+
+def invmod(a, m):
+    """Compute modular multiplicative inverse of a with respect to m.
+    That is, find a such that ax = 1 (mod m)"""
+    bezout, gcd = egcd(a, m)
+    if gcd != 1:
+        return ValueError('Modular inverse does not exist')
+    return bezout[0] % m
+
+def egcd(a, b):
+    """Compute the Bezout coefficients (returned as a tuple) and the
+    gcd of two integers a and b, using the Extended Euclidean Algorithm"""
+    s, old_s, t, old_t, r, old_r = 0, 1, 1, 0, b, a
+
+    while r > 0:
+        q = old_r // r
+        old_r, r = r, old_r-q*r
+        old_s, s = s, old_s-q*s
+        old_t, t = t, old_t-q*t
+
+    return (old_s, old_t), old_r
+
+def gen_RSA_keys():
+    """Generate public and private keys for the RSA cryptosystem. Each
+    is returned as a tuple (e, n), where e is the public (private) exponent
+    and n is the modulus"""
+    e = 3 # public-key exponent fixed at smallest possible coprime value
+    p, q = getStrongPrime(1024, e=e), getStrongPrime(1024, e=e)
+    n = p*q
+    totient = (p-1)*(q-1)
+    d = invmod(e, totient)
+    return (e, n), (d, n)
+
+def cipher_RSA(data, key):
+    return modexp(data, key[0], key[1])
