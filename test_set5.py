@@ -18,11 +18,11 @@ class Set5DH(TestCase):
         self.mitm = Eve(self.server)
 
     def test_33(self):
-        private_1, public_1 = ck.gen_DH_keys()
-        private_2, public_2 = ck.gen_DH_keys()
+        public_1, private_1  = ck.gen_DH_keys()
+        public_2, private_2  = ck.gen_DH_keys()
 
-        shared_1 = ck.gen_DH_secret(private_1, public_2)
-        shared_2 = ck.gen_DH_secret(private_2, public_1)
+        shared_1 = ck.gen_DH_secret(public_2, private_1)
+        shared_2 = ck.gen_DH_secret(public_1, private_2)
         self.assertEqual(shared_1, shared_2)
 
     def test_DH_echo(self):
@@ -136,9 +136,9 @@ class Alice(object):
 
     def connect_to_server(self, server):
         """Perform key-exchange with a server to generate a shared-secret"""
-        self.private, self.public = ck.gen_DH_keys(p=self.p, g=self.g)
+        self.public, self.private = ck.gen_DH_keys(p=self.p, g=self.g)
         public_server = server.key_exchange(self.p, self.g, self.public)
-        secret = ck.gen_DH_secret(self.private, public_server, p=self.p)
+        secret = ck.gen_DH_secret(public_server, self.private, p=self.p)
         self.key = cbc_keygen(secret)
         self.server = server
         return True
@@ -166,8 +166,8 @@ class Bob(object):
 
     def key_exchange(self, p, g, public):
         self.p, self.g = p, g
-        self.private, self.public = ck.gen_DH_keys(p=self.p, g=self.g)
-        self.secret = ck.gen_DH_secret(self.private, public, p=self.p)
+        self.public, self.private = ck.gen_DH_keys(p=self.p, g=self.g)
+        self.secret = ck.gen_DH_secret(public, self.private, p=self.p)
         return self.public
 
     def echo(self, cipher, iv):
@@ -235,9 +235,9 @@ class SRPClient(object):
 
     def login(self, server, DH_keys=None):
         if DH_keys is None:
-            private, public = ck.gen_DH_keys(p=self.N, g=self.g)
+            public, private = ck.gen_DH_keys(p=self.N, g=self.g)
         else:
-            private, public = DH_keys
+            public, private = DH_keys
 
         simple = server.simple
         response = server.login(self.email, public)
@@ -295,7 +295,7 @@ class SRPServer(object):
 
     def _srp_key_simple(self, email, client_public):
         salt, verifier = self.login_info[email]
-        private, public = ck.gen_DH_keys(p=self.N, g=self.g)
+        public, private = ck.gen_DH_keys(p=self.N, g=self.g)
 
         # compute and store session key
         scramble = randbelow(2**128)
@@ -309,7 +309,7 @@ class SRPServer(object):
 
     def _srp_key_standard(self, email, client_public):
         salt, verifier = self.login_info[email]
-        private, public = ck.gen_DH_keys(p=self.N, g=self.g)
+        public, private = ck.gen_DH_keys(p=self.N, g=self.g)
         public = (public+self.k*verifier)%self.N
 
         # compute and store session key
