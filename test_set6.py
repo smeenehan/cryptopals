@@ -79,6 +79,12 @@ class Set6(TestCase):
         signature, plain = sign_message(message, private)
         self.assertTrue(sig_verify(message, signature, public))
 
+    def test_DSA(self):
+        public, private = ck.gen_DSA_keys()
+        message = cu.random_bytes(count=128)
+        signature = ck.sign_DSA(message, private)
+        self.assertTrue(ck.verify_DSA(message, signature, public))
+
     def test_41(self):
         public, oracle = get_message_recovery_oracle()
 
@@ -114,6 +120,65 @@ class Set6(TestCase):
         forged = cu.int_to_bytes(F)
 
         self.assertTrue(sig_verify(message, forged, public))
+
+    def test_43(self):
+        public = 0x84ad4719d044495496a3201c8ff484feb45b962e7302e56a392aee4abab3e4bdebf2955b4736012f21a08084056b19bcd7fee56048e004e44984e2f411788efdc837a0d2e5abb7b555039fd243ac01f0fb2ed1dec568280ce678e931868d23eb095fde9d3779191b8c0299d6e07bbb283e6633451e535c45513b2d33c99ea17
+        message = b'For those that envy a MC it can be hazardous to your health\n' \
+            +b'So be friendly, a matter of life and death, just like a etch-a-sketch\n'
+        message_hash = 0xd2d0714f014a9784047eaeccf956520045c45265
+        signature = (548099063082341131477253921760299949438196259240,
+                     857042759984254168557880549501802188789837994940)
+        private_hash = cu.hex_to_bytes('0954edd5e0afe5542a4adf012611a91912a3ec16')
+
+        private = None
+        for k in range(2**16):
+            private_guess = ck.recover_DSA_private(message_hash, signature, k)
+            public_guess = ck.modexp(ck.DSA_G, private_guess, ck.DSA_P)
+            if public_guess == public:
+                private = private_guess
+                break
+
+        m = sha1()
+        m.update(hex(private)[2:].encode())
+        private_hash = m.digest()
+        self.assertEqual(cu.bytes_to_hex(private_hash), '0954edd5e0afe5542a4adf012611a91912a3ec16')
+
+    def test_44(self):
+        public = 0x2d026f4bf30195ede3a088da85e398ef869611d0f68f0713d51c9c1a3a26c95105d915e2d8cdf26d056b86b8a7b85519b1c23cc3ecdc6062650462e3063bd179c2a6581519f674a61f1d89a1fff27171ebc1b93d4dc57bceb7ae2430f98a6a4d83d8279ee65d71c1203d2c96d65ebbf7cce9d32971c3de5084cce04a2e147821
+        with open('data/Set_6_44.txt') as f:
+            lines = [x.strip('\n').split(': ')[1] for x in f.readlines()]
+        messages = lines[::4]
+        ss = [int(x) for x in lines[1::4]]
+        rs = [int(x) for x in lines[2::4]]
+        ms = [int(x, 16) for x in lines[3::4]]
+
+        idx1, idx2 = 0, 0
+        for idx, r in enumerate(rs):
+            rest = rs[idx+1:]
+            jdx = rest.index(r) if r in rest else Non
+            if jdx is not None:
+                idx1, idx2 = idx, jdx+idx+1
+                break
+
+        m1, m2 = ms[idx1], ms[idx2]
+        r1, r2 = rs[idx1], rs[idx2]
+        s1, s2 = ss[idx1], ss[idx2]
+
+        s_diff = s1-s2 % ck.DSA_Q
+        inv_diff = ck.invmod(s_diff, ck.DSA_Q)
+        m_diff = m1-m2 % ck.DSA_Q
+        k = inv_diff*(m_diff) % ck.DSA_Q
+
+        private = ck.recover_DSA_private(m1, (r1, s1), k)
+
+        m = sha1()
+        m.update(hex(private)[2:].encode())
+        private_hash = m.digest()
+        self.assertEqual(cu.bytes_to_hex(private_hash), 'ca8f6f7c66fa362d40760d135b763eb8527d3d52')
+        self.assertEqual(ck.modexp(ck.DSA_G, private, ck.DSA_P), public)
+
+
+
 
 
 
