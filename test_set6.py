@@ -1,4 +1,6 @@
+from decimal import Decimal, getcontext
 from hashlib import sha1
+from math import ceil, log
 from secrets import randbelow
 from unittest import TestCase
 
@@ -15,8 +17,8 @@ def get_sha1_int(message):
     return int.from_bytes(m.digest(), 'big')
 
 def get_message_recovery_oracle():
-    """Return RSA public key, and oracle function, which will decrypt
-    messages encrypted with the public key exactly once
+    """Return RSA public key, and an oracle function, which will decrypt
+    and return any message encrypted with the public key exactly once
     """
     public, private = ck.gen_RSA_keys()
     previous = []
@@ -62,6 +64,19 @@ def verify_RSA(message_hash, signature, public):
 
     sig_hash = stripped[16:36]
     return sig_hash == message_hash
+
+def get_parity_oracle():
+    """Return RSA public key, and oracle function, which will decrypt
+    messages encrypted with the public key and return True or False
+    depending on whether the plaintext (as integer) is even or odd
+    """
+    public, private = ck.gen_RSA_keys()
+    previous = []
+    def oracle(cipher):
+        plain = ck.cipher_RSA(cipher, private)
+        return not (plain % 2)
+    return public, oracle
+
 
 class Set6(TestCase):
 
@@ -208,12 +223,33 @@ class Set6(TestCase):
         self.assertTrue(ck.verify_DSA(m_hash_1, (r, s), public, g=ck.DSA_P+1))
         self.assertTrue(ck.verify_DSA(m_hash_2, (r, s), public, g=ck.DSA_P+1))
 
+    # RSA decryption using a parity oracle
+    def test_46(self):
+        plain = cu.base64_to_bytes('VGhhdCdzIHdoeSBJIGZvdW5kIHlvdSBkb24ndCBwbGF5IGFyb3VuZCB3aXRoIHRoZSBGdW5reSBDb2xkIE1lZGluYQ==')
+        plain_int = int.from_bytes(plain, 'big')
 
+        public, is_even = get_parity_oracle()
+        e, n = public
+        cipher = ck.cipher_RSA(plain_int, public)
 
+        # constant which will allow us to double the plaintext
+        double_plain = pow(2, e, n)
+        max_iter = ceil(log(n, 2))
 
+        """casting the bounds as Decimal type, and setting the precision
+        to have as many bits as the modulus, is *super* important. If we
+        don't do this rounding errors will screw us, and trying to do this
+        with integer division without messing up the last byte is annoying"""
+        lower_bound, upper_bound = Decimal(0), Decimal(n)
+        getcontext().prec = max_iter
+        for _ in range(max_iter):
+            cipher = double_plain*cipher % n
+            if is_even(cipher):
+                upper_bound = (lower_bound+upper_bound)/2
+            else:
+                lower_bound = (lower_bound+upper_bound)/2
+            if int(upper_bound) == int(lower_bound):
+                break
 
-
-
-
-
-
+        decrypted = cu.int_to_bytes(int(upper_bound))
+        self.assertEqual(plain, decrypted)
