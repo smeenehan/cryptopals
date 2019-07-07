@@ -128,51 +128,51 @@ DSA_P = 0x800000000000000089e1855218a0e7dac38136ffafa72eda7859f2171e25e65eac698c
 DSA_Q = 0xf4f47f05794b256174bba6e9b396a7707e563c5b
 DSA_G = 0x5958c9d3898b224b12672c0b98e06c60df923cb8bc999d119458fef538b8fa4046c8db53039db620c094c9fa077ef389b5322a559946a71903f990f1f7e0e025e2d7f7cf494aff1a0470f5b64c36b625a097f1651fe775323556fe00b3608c887892878480e99041be601a62166ca6894bdd41a7054ec89f756ba9fc95302291
 
-def gen_DSA_keys():
+def gen_DSA_keys(p=DSA_P, q=DSA_Q, g=DSA_G):
     """Generate public/private key-pair used by DSA, using fixed moduli"""
-    private = randbelow(DSA_Q)
-    public = modexp(DSA_G, private, DSA_P)
+    private = randbelow(q)
+    public = modexp(g, private, p)
     return (public, private)
 
-def sign_DSA(message, private):
+def sign_DSA(message, private, p=DSA_P, q=DSA_Q, g=DSA_G):
     """Produce a DSA signature tuple for a given message using a provided
     private key and with the hash algorithm fixed as SHA-1"""
-    k = randbelow(DSA_Q)
-    r = modexp(DSA_G, k, DSA_P) % DSA_Q
+    k = randbelow(q)
+    r = modexp(g, k, p) % q
 
     m = sha1()
     m.update(message)
     m_hash = int.from_bytes(m.digest(), 'big')
 
-    k_inv = invmod(k, DSA_Q)
-    s = k_inv*(m_hash+private*r) % DSA_Q
+    k_inv = invmod(k, q)
+    s = k_inv*(m_hash+private*r) % q
     return (r, s)
 
-def verify_DSA(message, signature, public):
+def verify_DSA(message, signature, public, p=DSA_P, q=DSA_Q, g=DSA_G):
     """Return whether a given DSA signature tuple is valid for the provided
     message, using the public key and with the hash algorithm fixed as SHA-1."""
     r, s = signature
-    if not (0 < r < DSA_Q) or not (0 < s < DSA_Q):
+    if not (0 < r < q) or not (0 < s < q):
         raise ValueError('Invalid signature values')
 
-    s_inv = invmod(s, DSA_Q)
+    s_inv = invmod(s, q)
     m = sha1()
     m.update(message)
     m_hash = int.from_bytes(m.digest(), 'big')
 
-    u1 = s_inv*m_hash % DSA_Q
-    u2 = s_inv*r % DSA_Q
+    u1 = s_inv*m_hash % q
+    u2 = s_inv*r % q
 
-    mod1 = modexp(DSA_G, u1, DSA_P)
-    mod2 = modexp(public, u2, DSA_P)
-    v = (mod1*mod2 % DSA_P) % DSA_Q
+    mod1 = modexp(g, u1, p)
+    mod2 = modexp(public, u2, p)
+    v = (mod1*mod2 % p) % q
 
     return v==r
 
-def recover_DSA_private(message_hash, signature, k):
+def recover_DSA_private(message_hash, signature, k, q=DSA_Q):
     """Given a message hash and its DSA signature tuple, and the per-user
     random key 'k', recover the signer's private key"""
     r, s = signature
-    r_inv = invmod(r, DSA_Q)
-    return r_inv*((s*k)-message_hash) % DSA_Q
+    r_inv = invmod(r, q)
+    return r_inv*((s*k)-message_hash) % q
 

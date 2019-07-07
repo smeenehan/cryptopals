@@ -110,8 +110,8 @@ class Set6(TestCase):
         m_hash = m.digest()
         block = bytes([0])+SHA1_ASN+m_hash
 
-        """Seems like Bleichenbacher's 'pencil and paper' attack strategy
-        doesn't work for smaller moduli (e.g., N=1024), and brute-forcing I
+        """Bleichenbacher's 'pencil and paper' attack strategy doesn't
+         work for smaller moduli (e.g., N=1024), and via brute-forcing I
         couldn't find a zero-padded forged signature that worked, so I'm
         saying screw it and doing this for 3072 bit RSA"""
         D = int.from_bytes(block, 'big')
@@ -152,6 +152,8 @@ class Set6(TestCase):
         rs = [int(x) for x in lines[2::4]]
         ms = [int(x, 16) for x in lines[3::4]]
 
+        """Find signed messages with the same r. If the algorithm parameters
+        (p, q, g) are the same, this can only mean they share the same k"""
         idx1, idx2 = 0, 0
         for idx, r in enumerate(rs):
             rest = rs[idx+1:]
@@ -159,7 +161,6 @@ class Set6(TestCase):
             if jdx is not None:
                 idx1, idx2 = idx, jdx+idx+1
                 break
-
         m1, m2 = ms[idx1], ms[idx2]
         r1, r2 = rs[idx1], rs[idx2]
         s1, s2 = ss[idx1], ss[idx2]
@@ -170,12 +171,33 @@ class Set6(TestCase):
         k = inv_diff*(m_diff) % ck.DSA_Q
 
         private = ck.recover_DSA_private(m1, (r1, s1), k)
-
         m = sha1()
         m.update(hex(private)[2:].encode())
         private_hash = m.digest()
         self.assertEqual(cu.bytes_to_hex(private_hash), 'ca8f6f7c66fa362d40760d135b763eb8527d3d52')
         self.assertEqual(ck.modexp(ck.DSA_G, private, ck.DSA_P), public)
+
+    def test_45(self):
+        message_1 = b'Hello, world'
+        message_2 = b'Goodbye, world'
+
+        public, _ = ck.gen_DSA_keys()
+
+        """Case g = 0 (mod p). Since the verifier v is proprotional to
+        g**u (mod p), it will always be 0, so any signature where r = 0
+        looks valid. This only works if we don't check r and s beforehand,
+        so it's kind of lame."""
+
+        """Case g = 1 (mod p). More interesting since we generate a signature
+        (r, s) that will validate but it not obviously invalid (e.g., r != 0)"""
+        z = randbelow(2**16)
+        r = ck.modexp(public, z, ck.DSA_P) % ck.DSA_Q
+        z_inv = ck.invmod(z, ck.DSA_Q)
+        s = z_inv*r % ck.DSA_Q
+
+        self.assertTrue(ck.verify_DSA(message_1, (r, s), public, g=ck.DSA_P+1))
+        self.assertTrue(ck.verify_DSA(message_2, (r, s), public, g=ck.DSA_P+1))
+
 
 
 
