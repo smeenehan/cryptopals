@@ -54,19 +54,28 @@ def egcd(a, b):
 
     return (old_s, old_t), old_r
 
-def gen_RSA_keys():
+def gen_RSA_keys(N=1024):
     """Generate public and private keys for the RSA cryptosystem. Each
     is returned as a tuple (e, n), where e is the public (private) exponent
     and n is the modulus"""
     e = 3 # public-key exponent fixed at smallest possible coprime value
-    p, q = getStrongPrime(1024, e=e), getStrongPrime(1024, e=e)
+    p, q = getStrongPrime(N//2, e=e), getStrongPrime(N//2, e=e)
     n = p*q
     totient = (p-1)*(q-1)
     d = invmod(e, totient)
     return (e, n), (d, n)
 
 def cipher_RSA(data, key):
-    return modexp(data, key[0], key[1])
+    """The input data can be an int or bytes-like (interpreted as big-endian),
+    and we will return either an int or bytes, respectively"""
+    byte_input = False
+    if isinstance(data, bytes) or isinstance(data, bytearray):
+        byte_input =True
+        data = int.from_bytes(data, 'big')
+    cipher =  modexp(data, key[0], key[1])
+    if byte_input:
+        cipher = int_to_bytes(cipher)
+    return cipher
 
 def RSA_broadcast_attack(public_keys, ciphertexts):
     """Use Håstad's broadcast attack to break RSA using small public-key
