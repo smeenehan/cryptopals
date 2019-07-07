@@ -96,7 +96,7 @@ class Set6(TestCase):
         e, n = public
         new_cipher = ck.cipher_RSA(s, public)*cipher % n
         new_plain = oracle(new_cipher)
-        s_inv = ck.invmod(s, n)
+        s_inv = ck.modinv(s, n)
         recovered = s_inv*new_plain % n
         self.assertEqual(plain, recovered)
 
@@ -133,7 +133,7 @@ class Set6(TestCase):
         private = None
         for k in range(2**16):
             private_guess = ck.recover_DSA_private(message_hash, signature, k)
-            public_guess = ck.modexp(ck.DSA_G, private_guess, ck.DSA_P)
+            public_guess = pow(ck.DSA_G, private_guess, ck.DSA_P)
             if public_guess == public:
                 private = private_guess
                 break
@@ -166,7 +166,7 @@ class Set6(TestCase):
         s1, s2 = ss[idx1], ss[idx2]
 
         s_diff = s1-s2 % ck.DSA_Q
-        inv_diff = ck.invmod(s_diff, ck.DSA_Q)
+        inv_diff = ck.modinv(s_diff, ck.DSA_Q)
         m_diff = m1-m2 % ck.DSA_Q
         k = inv_diff*(m_diff) % ck.DSA_Q
 
@@ -175,7 +175,7 @@ class Set6(TestCase):
         m.update(hex(private)[2:].encode())
         private_hash = m.digest()
         self.assertEqual(cu.bytes_to_hex(private_hash), 'ca8f6f7c66fa362d40760d135b763eb8527d3d52')
-        self.assertEqual(ck.modexp(ck.DSA_G, private, ck.DSA_P), public)
+        self.assertEqual(pow(ck.DSA_G, private, ck.DSA_P), public)
 
     def test_45(self):
         message_1 = b'Hello, world'
@@ -191,8 +191,8 @@ class Set6(TestCase):
         """Case g = 1 (mod p). More interesting since we generate a signature
         (r, s) that will validate but it not obviously invalid (e.g., r != 0)"""
         z = randbelow(2**16)
-        r = ck.modexp(public, z, ck.DSA_P) % ck.DSA_Q
-        z_inv = ck.invmod(z, ck.DSA_Q)
+        r = pow(public, z, ck.DSA_P) % ck.DSA_Q
+        z_inv = ck.modinv(z, ck.DSA_Q)
         s = z_inv*r % ck.DSA_Q
 
         self.assertTrue(ck.verify_DSA(message_1, (r, s), public, g=ck.DSA_P+1))

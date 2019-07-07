@@ -15,26 +15,15 @@ def gen_DH_keys(p=DH_P, g=DH_G):
     """Return a tuple which are public-private keys for Diffie-Hellman, as
     bignums"""
     private = randbelow(2**256) % p
-    public = modexp(g, private, p)
+    public = pow(g, private, p)
     return private, public
 
 def gen_DH_secret(private, public, p=DH_P):
     """Return a Diffie-Hellman secret key given a private and public key,
     as a byte-like object."""
-    return int_to_bytes(modexp(public, private, p))
+    return int_to_bytes(pow(public, private, p))
 
-def modexp(g, u, p):
-    """Compute (g**u) mod p using fast and memory-efficient algorithm
-    (no overflow), based on pseudo-code from Schneier's Applied Crypto"""
-    s = 1
-    while u != 0:
-        if u & 1:
-            s = (s*g) % p
-        u >>= 1
-        g = (g*g) %p
-    return s
-
-def invmod(a, m):
+def modinv(a, m):
     """Compute modular multiplicative inverse of a with respect to m.
     That is, find a such that ax = 1 (mod m)"""
     bezout, gcd = egcd(a, m)
@@ -63,7 +52,7 @@ def gen_RSA_keys(N=1024):
     p, q = getStrongPrime(N//2, e=e), getStrongPrime(N//2, e=e)
     n = p*q
     totient = (p-1)*(q-1)
-    d = invmod(e, totient)
+    d = modinv(e, totient)
     return (e, n), (d, n)
 
 def cipher_RSA(data, key):
@@ -73,7 +62,7 @@ def cipher_RSA(data, key):
     if isinstance(data, bytes) or isinstance(data, bytearray):
         byte_input =True
         data = int.from_bytes(data, 'big')
-    cipher =  modexp(data, key[0], key[1])
+    cipher =  pow(data, key[0], key[1])
     if byte_input:
         cipher = int_to_bytes(cipher)
     return cipher
@@ -97,7 +86,7 @@ def RSA_broadcast_attack(public_keys, ciphertexts):
     residue = 0
     for c, n in zip(ciphertexts[:e], n_vals):
         m = N // n
-        residue += c*m*invmod(m, n)
+        residue += c*m*modinv(m, n)
     residue = residue % N
     return invpow(residue, e)
 
@@ -131,20 +120,20 @@ DSA_G = 0x5958c9d3898b224b12672c0b98e06c60df923cb8bc999d119458fef538b8fa4046c8db
 def gen_DSA_keys(p=DSA_P, q=DSA_Q, g=DSA_G):
     """Generate public/private key-pair used by DSA, using fixed moduli"""
     private = randbelow(q)
-    public = modexp(g, private, p)
+    public = pow(g, private, p)
     return (public, private)
 
 def sign_DSA(message, private, p=DSA_P, q=DSA_Q, g=DSA_G):
     """Produce a DSA signature tuple for a given message using a provided
     private key and with the hash algorithm fixed as SHA-1"""
     k = randbelow(q)
-    r = modexp(g, k, p) % q
+    r = pow(g, k, p) % q
 
     m = sha1()
     m.update(message)
     m_hash = int.from_bytes(m.digest(), 'big')
 
-    k_inv = invmod(k, q)
+    k_inv = modinv(k, q)
     s = k_inv*(m_hash+private*r) % q
     return (r, s)
 
@@ -155,7 +144,7 @@ def verify_DSA(message, signature, public, p=DSA_P, q=DSA_Q, g=DSA_G):
     if not (0 < r < q) or not (0 < s < q):
         raise ValueError('Invalid signature values')
 
-    s_inv = invmod(s, q)
+    s_inv = modinv(s, q)
     m = sha1()
     m.update(message)
     m_hash = int.from_bytes(m.digest(), 'big')
@@ -163,8 +152,8 @@ def verify_DSA(message, signature, public, p=DSA_P, q=DSA_Q, g=DSA_G):
     u1 = s_inv*m_hash % q
     u2 = s_inv*r % q
 
-    mod1 = modexp(g, u1, p)
-    mod2 = modexp(public, u2, p)
+    mod1 = pow(g, u1, p)
+    mod2 = pow(public, u2, p)
     v = (mod1*mod2 % p) % q
 
     return v==r
@@ -173,6 +162,6 @@ def recover_DSA_private(message_hash, signature, k, q=DSA_Q):
     """Given a message hash and its DSA signature tuple, and the per-user
     random key 'k', recover the signer's private key"""
     r, s = signature
-    r_inv = invmod(r, q)
+    r_inv = modinv(r, q)
     return r_inv*((s*k)-message_hash) % q
 

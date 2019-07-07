@@ -96,7 +96,7 @@ class Set5RSA(TestCase):
         self.assertEqual(gcd, 2)
 
     def test_invmod(self):
-        self.assertEqual(ck.invmod(17, 3120), 2753)
+        self.assertEqual(ck.modinv(17, 3120), 2753)
 
     def test_39(self):
         public, private = ck.gen_RSA_keys()
@@ -253,10 +253,10 @@ class SRPClient(object):
         xH = m.digest()
         x = int.from_bytes(xH, byteorder='big')
         if simple:
-            S = ck.modexp(server_public, private+scramble*x, self.N)
+            S = pow(server_public, private+scramble*x, self.N)
         else:
-            S = ck.modexp(self.g, x, self.N)
-            S = ck.modexp(server_public-self.k*S, private+scramble*x, self.N)
+            S = pow(self.g, x, self.N)
+            S = pow(server_public-self.k*S, private+scramble*x, self.N)
         m = sha256()
         m.update(cu.int_to_bytes(S))
         self.session_key = m.digest()
@@ -284,7 +284,7 @@ class SRPServer(object):
         m.update(salt+bytes(password, 'utf-8'))
         xH = m.digest()
         x = int.from_bytes(xH, byteorder='big')
-        verifier = ck.modexp(self.g, x, self.N)
+        verifier = pow(self.g, x, self.N)
         self.login_info[email] = (salt, verifier)
 
     def login(self, email, client_public):
@@ -299,8 +299,8 @@ class SRPServer(object):
 
         # compute and store session key
         scramble = randbelow(2**128)
-        S = ck.modexp(verifier, scramble, self.N)
-        S = ck.modexp(client_public*S, private, self.N)
+        S = pow(verifier, scramble, self.N)
+        S = pow(client_public*S, private, self.N)
         m = sha256()
         m.update(cu.int_to_bytes(S))
         self.session_keys[email] = m.digest()
@@ -314,8 +314,8 @@ class SRPServer(object):
 
         # compute and store session key
         scramble = srp_scrambler(client_public, public)
-        S = ck.modexp(verifier, scramble, self.N)
-        S = ck.modexp(client_public*S, private, self.N)
+        S = pow(verifier, scramble, self.N)
+        S = pow(client_public*S, private, self.N)
         m = sha256()
         m.update(cu.int_to_bytes(S))
         self.session_keys[email] = m.digest()
@@ -369,7 +369,7 @@ class SRPMalicious(object):
             m.update(salt+bytes(pw, 'utf-8'))
             xH = m.digest()
             x = int.from_bytes(xH, byteorder='big')
-            S = ck.modexp(self.g, scramble*x, self.N)
+            S = pow(self.g, scramble*x, self.N)
             S = public*S % self.N
             m = sha256()
             m.update(cu.int_to_bytes(S))
