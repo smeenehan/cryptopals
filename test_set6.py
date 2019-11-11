@@ -77,6 +77,27 @@ def get_parity_oracle():
         return not (plain % 2)
     return public, oracle
 
+def PKCS1v1p5(plain, N):
+    num_bytes = ceil(N/8)
+    plain_bytes = cu.int_to_bytes(plain)
+    num_pad = num_bytes-3-len(plain_bytes)
+    padding = cu.random_bytes(num_pad)
+    padded = bytes([0, 2])+padding+bytes([0])+plain_bytes
+    return int.from_bytes(padded,'big')
+
+def get_PKCS_oracle(N):
+    """Return RSA public key, and oracle function, which will decrypt
+    messages encrypted with the public key and return True or False
+    depending on whether or not the plaintest has a valid PCKS#1v1.5
+    padding"""
+    strong = N>512
+    public, private = ck.gen_RSA_keys(N=N, strong=strong)
+    B = 2**(N-16)
+    def oracle(cipher):
+        plain = ck.cipher_RSA(cipher, private)
+        return (plain>=2*B) and (plain<3*B)
+    return public, oracle
+
 
 class Set6(TestCase):
 
@@ -104,6 +125,16 @@ class Set6(TestCase):
         message_hash = get_sha1_int(message)
         signature = ck.sign_DSA(message_hash, private)
         self.assertTrue(ck.verify_DSA(message_hash, signature, public))
+
+    def test_PKCS(self):
+        N = 1024
+        public, oracle = get_PKCS_oracle(N=N)
+        plain = randbelow(2**64)
+        padded = PKCS1v1p5(plain, N)
+        self.assertEqual(len(cu.int_to_bytes(padded)), ceil(N/8)-1)
+
+        cipher = ck.cipher_RSA(padded, public)
+        self.assertTrue(oracle(cipher))
 
     # Unpadded RSA message recovery oracle attack
     def test_41(self):

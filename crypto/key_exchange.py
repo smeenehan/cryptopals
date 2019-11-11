@@ -1,7 +1,7 @@
 from hashlib import sha1
 from secrets import randbelow
 
-from Crypto.Util.number import getStrongPrime
+from Crypto.Util.number import getPrime, getStrongPrime
 import numpy as np
 
 from crypto.utils import int_to_bytes
@@ -30,7 +30,7 @@ def modinv(a, m):
     """
     bezout, gcd = egcd(a, m)
     if gcd != 1:
-        return ValueError('Modular inverse does not exist')
+        raise ValueError('Modular inverse does not exist')
     return bezout[0] % m
 
 def egcd(a, b):
@@ -48,15 +48,28 @@ def egcd(a, b):
     bezout, gcd = (old_s, old_t), old_r
     return bezout, gcd
 
-def gen_RSA_keys(N=1024, e=3):
+def gen_RSA_keys(N=1024, e=3, strong=True):
     """Generate public and private keys for N-bit RSA, using the public
     exponent e. Each key is returned as a tuple (e/d, n), where e/d is the
     public/private exponent, and n is the modulus.
+
+    If strong is True, we'll ue PyCrypto's getStrongPrime function, which
+    requires N > 512 and is a multiple of 128.
     """
-    p, q = getStrongPrime(N//2, e=e), getStrongPrime(N//2, e=e)
-    n = p*q
-    totient = (p-1)*(q-1) # Euler's totient vs. Carmichael's..easier
-    d = modinv(e, totient)
+    if strong:
+        prime_func = lambda x: getStrongPrime(x//2, e=e)
+    else:
+        prime_func = lambda x: getPrime(x//2)
+    good = False
+    while not good:
+        try:
+            p, q = prime_func(N), prime_func(N)
+            n = p*q
+            totient = (p-1)*(q-1) # Euler's totient vs. Carmichael's..easier
+            d = modinv(e, totient)
+            good = True
+        except ValueError:
+            good = False
     return (e, n), (d, n)
 
 def cipher_RSA(data, key):
