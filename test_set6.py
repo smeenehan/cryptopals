@@ -284,3 +284,15 @@ class Set6(TestCase):
 
         decrypted = cu.int_to_bytes(int(upper_bound))
         self.assertEqual(plain, decrypted)
+
+    # Bleichenbacher's padding attack (simple)
+    def test_47(self):
+        N = 256
+        public, oracle = get_PKCS_oracle(N=N)
+        plain = int.from_bytes(b'kick it, CC', 'big')
+        padded = PKCS1v1p5(plain, N)
+        cipher = ck.cipher_RSA(padded, public)
+
+        decrypted = ck.Bleichenbacher_attack(cipher, public, N, oracle)
+        self.assertEqual(decrypted, padded)
+
