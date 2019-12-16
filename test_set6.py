@@ -78,7 +78,7 @@ def get_parity_oracle():
     return public, oracle
 
 def PKCS1v1p5(plain, N):
-    num_bytes = ceil(N/8)
+    num_bytes = N//8
     plain_bytes = cu.int_to_bytes(plain)
     num_pad = num_bytes-3-len(plain_bytes)
     padding = cu.random_bytes(num_pad)
@@ -292,7 +292,19 @@ class Set6(TestCase):
         plain = int.from_bytes(b'kick it, CC', 'big')
         padded = PKCS1v1p5(plain, N)
         cipher = ck.cipher_RSA(padded, public)
+        self.assertTrue(oracle(cipher))
 
         decrypted = ck.Bleichenbacher_attack(cipher, public, N, oracle)
         self.assertEqual(decrypted, padded)
 
+    # Bleichenbacher's padding attack (hard)
+    def test_48(self):
+        N = 1024
+        public, oracle = get_PKCS_oracle(N=N)
+        plain = int.from_bytes(b'Can it be that it was all so simple then?', 'big')
+        padded = PKCS1v1p5(plain, N)
+        cipher = ck.cipher_RSA(padded, public)
+        self.assertTrue(oracle(cipher))
+
+        decrypted = ck.Bleichenbacher_attack(cipher, public, N, oracle)
+        self.assertEqual(decrypted, padded)

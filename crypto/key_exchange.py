@@ -1,5 +1,4 @@
 from hashlib import sha1
-from math import ceil, floor
 from secrets import randbelow
 
 from Crypto.Util.number import getPrime, getStrongPrime
@@ -182,6 +181,14 @@ def recover_DSA_private(message_hash, signature, k, q=DSA_Q):
     r_inv = modinv(r, q)
     return r_inv*((s*k)-message_hash) % q
 
+def ceildiv(x, y):
+    """Idea taken from http://stackoverflow.com/a/17511341, since using
+    ceil(x/y) is a bad idea with large numbers due to round-off error"""
+    return -(-x // y)
+
+def floordiv(x, y):
+    return x // y
+
 
 def Bleichenbacher_attack(cipher, public, N, oracle):
     """Given an encrypted message, public key of bit length N, and an oracle function
@@ -190,17 +197,13 @@ def Bleichenbacher_attack(cipher, public, N, oracle):
     e, n = public
     B = 2**(N-16)
 
-    idx = 0
-
     def check_PKCS(s):
         s_cipher = cipher_RSA(s, public)
         mod_cipher = (cipher*s_cipher) % n
         return oracle(mod_cipher)
 
     def find_s(s_min, s_max):
-        nonlocal idx
         for s in range(s_min, s_max):
-            idx += 1
             if check_PKCS(s):
                 return s, True
         return s_min, False
@@ -208,20 +211,20 @@ def Bleichenbacher_attack(cipher, public, N, oracle):
     def update_ranges(prev_ranges, curr_s):
         new_ranges = set()
         for a, b in prev_ranges:
-            r_min, r_max = ceil((a*curr_s-3*B+1)/n), floor((b*curr_s-2*B)/n)
+            r_min, r_max = floordiv(a*curr_s-3*B+1, n), ceildiv(b*curr_s-2*B, n)
             for r in range(r_min, r_max+1):
-                new_a = max(a, ceil((2*B+r*n)/curr_s))
-                new_b = min(b, floor((3*B-1+r*n)/curr_s))
+                new_a = max(a, ceildiv(2*B+r*n, curr_s))
+                new_b = min(b, floordiv(3*B-1+r*n, curr_s))
                 if new_a <= new_b:
                     new_ranges.add((new_a, new_b))
         return new_ranges
 
     # Skip step 1 of the algorithm; assume a PKCS conforming cipher
     done = False
-    ranges = {(2*B, 3*B)}
+    ranges = {(2*B, 3*B-1)}
 
     # Step 2a
-    s, found = find_s(ceil(n/(3*B)), n)
+    s, found = find_s(ceildiv(n, 3*B), n)
     if not found:
         raise Error('Could not find first PKCS conforming message')
 
@@ -234,29 +237,23 @@ def Bleichenbacher_attack(cipher, public, N, oracle):
         multiple_ranges = len(ranges)>1
         a, b = ranges.pop()
         ranges.add((a, b)) # UGLY!!!
-        if not multiple_ranges:
-            print(b-a)
-            print(s)
         if not multiple_ranges and (a==b):
             plain, done = a, True
             break
 
         if multiple_ranges:
             # Step 2b, search for next conforming message if multiple ranges
-            print('2b')
             s, found = find_s(s+1, n)
         else:
             # Step 2c, search for next conforming message if one range
-            print('2c')
-            r_min = ceil(2*(b*s-2*B)/n)
+            r_min = floordiv(2*(b*s-2*B), n)
             s_max = 0
             for r in range(r_min, n):
-                s_min = max(s_max, ceil((2*B+r*n)/b))
-                s_max = floor((3*B+r*n)/a)
+                s_min = max(s_max, floordiv(2*B+r*n, b))
+                s_max = ceildiv(3*B+r*n, a)
                 s, found = find_s(s_min, s_max)
                 if found:
                     break
-        print(f'Iterations: {idx}')
         if not found:
             raise Error('Could not find next PKCS conforming message')
 
